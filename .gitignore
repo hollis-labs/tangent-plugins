@@ -1,0 +1,6 @@
+# Built, installable plugin directories (make dist)
+/dist/
+
+# Local co-development against a tangent checkout; see README
+go.work
+go.work.sum
