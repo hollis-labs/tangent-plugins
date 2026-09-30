@@ -40,6 +40,9 @@ func (f *scriptedInbox) CallTool(_ context.Context, name string, arguments any) 
 	defer f.mu.Unlock()
 	switch name {
 	case EnqueueTurnTool:
+		if refusal, ok := checkEnqueue(args); !ok {
+			return refusal, nil
+		}
 		f.enqueued = append(f.enqueued, args)
 		return tangentplugin.ToolResult{Content: json.RawMessage(`{}`)}, nil
 

@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	github.com/hollis-labs/plugin-sdk v0.5.0
-	github.com/hollis-labs/tangent v0.15.0
+	github.com/hollis-labs/tangent v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

@@ -385,24 +385,7 @@ func (e *Engine) onSessionIdle(s *ActiveSession) {
 	e.mu.RUnlock()
 
 	if caller != nil {
-		req := map[string]any{
-			"contract_version": tangentplugin.AgentTurnContractVersion,
-			"turn_id":          extracted.TurnID,
-			"session_id":       s.ID,
-			"idempotency_key":  fmt.Sprintf("runner:%s:%s", s.ID, extracted.TurnID),
-			"kind":             extracted.Kind,
-			"source": map[string]any{
-				"agent_id":       s.AgentID,
-				"agent_label":    s.AgentLabel,
-				"application_id": "runner",
-			},
-			"title":   extracted.Title,
-			"content": extracted.Prose,
-			"correlations": map[string]any{
-				"runner_session_id": s.ID,
-				"turns_count":       turnsCount,
-			},
-		}
+		req := enqueueRequest(s.ID, s.AgentID, s.AgentLabel, extracted, turnsCount)
 		// tangent.turns_enqueue takes the turn itself as its arguments, like
 		// every other enqueue tool, not a JSON string wrapped in a field.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -571,4 +554,29 @@ func (e *Engine) Stop(sessionID string) error {
 		_ = stdin.Close()
 	}
 	return nil
+}
+
+// enqueueRequest is the tangent.turns_enqueue arguments for one extracted turn.
+// It is the only place the runner builds a turn, so the contract test
+// (contract_test.go) can hold every turn it sends to
+// plugin.TurnsEnqueueInputSchema, which is what the host's tool accepts.
+func enqueueRequest(sessionID, agentID, agentLabel string, extracted *ExtractedTurn, turnsCount int) map[string]any {
+	return map[string]any{
+		"contract_version": tangentplugin.AgentTurnContractVersion,
+		"turn_id":          extracted.TurnID,
+		"session_id":       sessionID,
+		"idempotency_key":  fmt.Sprintf("runner:%s:%s", sessionID, extracted.TurnID),
+		"kind":             extracted.Kind,
+		"source": map[string]any{
+			"agent_id":       agentID,
+			"agent_label":    agentLabel,
+			"application_id": "runner",
+		},
+		"title":   extracted.Title,
+		"content": extracted.Prose,
+		"correlations": map[string]any{
+			"runner_session_id": sessionID,
+			"turns_count":       turnsCount,
+		},
+	}
 }

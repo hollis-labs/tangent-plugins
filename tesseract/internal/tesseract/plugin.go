@@ -147,7 +147,7 @@ func NewWithClient(client *Client) *Plugin { return &Plugin{client: client} }
 
 func (p *Plugin) ID() string      { return ID }
 func (p *Plugin) Name() string    { return "Tesseract review" }
-func (p *Plugin) Version() string { return "0.1.0" }
+func (p *Plugin) Version() string { return "0.1.1" }
 
 func (p *Plugin) Description() string {
 	return "Puts Tesseract records that need dispositioning on a tangent.app-board: one agent " +
