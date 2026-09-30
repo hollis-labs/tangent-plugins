@@ -1,0 +1,118 @@
+# tangent-plugins golangci-lint config (v2 format), shared by every plugin
+# module: run from a module directory with --config ../.golangci.yml.
+#
+# Tangent's own .golangci.yml, so a plugin is held to the same bar as the host
+# it plugs into.
+
+version: "2"
+
+run:
+  go: "1.26"
+
+linters:
+  default: none
+  enable:
+    # Essential — catch real bugs.
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+
+    # Security.
+    - gosec
+
+    # Style — minimal; errors only, not opinions.
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+
+    # Correctness.
+    - errorlint
+    - nilerr
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Print
+        - fmt.Println
+        - fmt.Printf
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf
+
+    gosec:
+      excludes:
+        # G104: covered by errcheck; double-reporting is noise.
+        - G104
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    misspell:
+      locale: US
+      ignore-rules:
+        # Torque's status vocabulary spells it this way; the torque plugin
+        # transcribes another application's values rather than choosing them.
+        - cancelled
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000"
+
+    unparam:
+      check-exported: false
+
+  exclusions:
+    generated: lax
+
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      - path: _test\.go
+        linters:
+          - unparam
+
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false
+
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
