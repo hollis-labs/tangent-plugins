@@ -10,7 +10,7 @@ const (
 	ID = "tangent.plugin.runner"
 
 	// PluginVersion is the semantic version of this runner plugin.
-	PluginVersion = "0.1.0"
+	PluginVersion = "0.1.1"
 
 	// Tools served by the runner plugin.
 	LaunchTool   = "tangent.runner_launch"

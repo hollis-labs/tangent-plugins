@@ -44,6 +44,11 @@ func (f *fakeTools) CallTool(
 	f.mu.Lock()
 	f.calls = append(f.calls, toolCall{Name: name, Arguments: decoded})
 	f.mu.Unlock()
+	if name == EnqueueTurnTool {
+		if refusal, ok := checkEnqueue(decoded); !ok {
+			return refusal, nil
+		}
+	}
 
 	return tangentplugin.ToolResult{Content: json.RawMessage(`{"status":"ok"}`)}, nil
 }
