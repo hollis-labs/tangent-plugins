@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  plugin:
+    name: ${{ matrix.plugin }} (lint + test + dist)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One job per plugin: each is its own module, and one must not be able
+        # to break another's build.
+        plugin: [runner, tesseract, torque]
+    # Everything a plugin needs is public (tangent, plugin-sdk and the
+    # hollis-labs Go modules), so there is no private-module token here.
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.plugin }}/go.mod
+          cache-dependency-path: ${{ matrix.plugin }}/go.sum
+
+      - name: gofmt check
+        working-directory: ${{ matrix.plugin }}
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: go vet
+        working-directory: ${{ matrix.plugin }}
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.11.4
+          working-directory: ${{ matrix.plugin }}
+          args: --config ../.golangci.yml --timeout=5m ./...
+
+      - name: Test (race)
+        working-directory: ${{ matrix.plugin }}
+        run: go test -race ./...
+
+      # Proves the entrypoint builds and emits a manifest the host would
+      # install: `make dist` runs `<binary> --manifest`, which validates it.
+      - name: Build installable dist
+        working-directory: ${{ matrix.plugin }}
+        run: make dist
