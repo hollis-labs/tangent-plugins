@@ -141,13 +141,9 @@ type TaskPage struct {
 	// More says Torque held at least one further match. It is exact, not a
 	// guess from `len(Tasks) == limit`.
 	//
-	// There is no total beside it, and that is Torque's answer rather than a
-	// shortcut: `GET /api/v1/tasks` returns `{tasks, total}` where `total` is
-	// `len(tasks)` — the page, not the match count, as Torque's own handler
-	// comment says. `has_more` and a cursor exist on `torque_task_list`, the
-	// MCP door, which this plugin deliberately does not use. So a total would
-	// cost a second call on the path of a person waiting for a board, and
-	// "and there are more" is the honest sentence that costs nothing.
+	// The client needs rows and a continuation signal, not a match count.
+	// It accepts both legacy {tasks,...} and current {items,meta} responses
+	// during the Torque envelope rollout without requesting include_total.
 	More bool
 }
 
@@ -157,7 +153,7 @@ type TaskPage struct {
 // handler splits on; everything else is one parameter per facet.
 //
 // The limit sent to Torque is one higher than the caller's. That extra row is
-// never rendered; it is the whole truncation signal, and it is Torque's own
+// never rendered; it supplies the truncation signal, and it is Torque's own
 // idiom — `torque_task_list` determines `has_more` the same way ("fetch one
 // extra row beyond limit"). It costs one record on a request already in
 // flight, where a count would cost a second round trip.
@@ -179,15 +175,44 @@ func (c *Client) ListTasks(ctx context.Context, filters ListFilters) (TaskPage, 
 	query.Set("limit", strconv.Itoa(limit+1))
 
 	var response struct {
-		Tasks []Task `json:"tasks"`
+		Tasks   json.RawMessage `json:"tasks"`
+		Items   json.RawMessage `json:"items"`
+		Meta    json.RawMessage `json:"meta"`
+		HasMore *bool           `json:"has_more"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/api/v1/tasks?"+query.Encode(), nil, &response); err != nil {
 		return TaskPage{}, err
 	}
-	if len(response.Tasks) > limit {
-		return TaskPage{Tasks: response.Tasks[:limit], More: true}, nil
+	rows := response.Tasks
+	more := response.HasMore != nil && *response.HasMore
+	if len(response.Items) > 0 {
+		if len(response.Tasks) > 0 || bytes.Equal(bytes.TrimSpace(response.Items), []byte("null")) {
+			return TaskPage{}, fmt.Errorf("%w: invalid task-list envelope", ErrTorqueUnavailable)
+		}
+		var meta struct {
+			HasMore *bool `json:"has_more"`
+		}
+		if err := json.Unmarshal(response.Meta, &meta); err != nil {
+			return TaskPage{}, fmt.Errorf("%w: decoding task-list meta: %w", ErrTorqueUnavailable, err)
+		}
+		if meta.HasMore == nil {
+			return TaskPage{}, fmt.Errorf("%w: task-list meta is missing has_more", ErrTorqueUnavailable)
+		}
+		rows, more = response.Items, *meta.HasMore
 	}
-	return TaskPage{Tasks: response.Tasks}, nil
+	// A missing list is an unusable answer, not an empty board. Legacy null
+	// tasks remain valid empty pages, as the older API can emit a nil slice.
+	if len(rows) == 0 {
+		return TaskPage{}, fmt.Errorf("%w: task-list response is missing tasks or items", ErrTorqueUnavailable)
+	}
+	var tasks []Task
+	if err := json.Unmarshal(rows, &tasks); err != nil {
+		return TaskPage{}, fmt.Errorf("%w: decoding task-list rows: %w", ErrTorqueUnavailable, err)
+	}
+	if len(tasks) > limit {
+		return TaskPage{Tasks: tasks[:limit], More: true}, nil
+	}
+	return TaskPage{Tasks: tasks, More: more}, nil
 }
 
 // Transition moves one task to a new status.
