@@ -16,12 +16,13 @@ schedule. Tangent's binary stays domain-free.
 
 | Plugin | ID | What it does |
 |---|---|---|
+| `github` | `tangent.plugin.github` | PR review rooms with body, agent notes, revision-pinned approval and merge, through the operator's gh authentication. |
 | `runner` | `tangent.plugin.runner` | Supervises an agent process (or a Tether session) and carries its turns to Tangent's agent-turns inbox and the operator's answers back. |
 | `tesseract` | `tangent.plugin.tesseract` | A review board over Tesseract records: deprecate in place, hand promotions and rewords back to the agent. |
 | `torque` | `tangent.plugin.torque` | A board over Torque's task list; Sync pushes staged status moves back without an agent turn. |
 
-Each plugin's tools are documented in Tangent's
-[`docs/mcp-integration.md`](https://github.com/hollis-labs/tangent/blob/main/docs/mcp-integration.md).
+Each plugin's README documents its tools. Tangent's
+[`docs/mcp-integration.md`](https://github.com/hollis-labs/tangent/blob/main/docs/mcp-integration.md) links the installed-plugin guides.
 
 ## Build and install
 
@@ -53,7 +54,7 @@ torque/                     module github.com/hollis-labs/tangent-plugins/torque
   cmd/tangent-plugin-torque/  entrypoint; `--manifest` prints its plugin.yaml
   internal/torque/            the plugin
   Makefile                    test / lint / build / dist
-runner/, tesseract/         the same shape
+github/, runner/, tesseract/         the same shape
 dist/tangent.plugin.<p>/    built, installable plugin directory (gitignored)
 ```
 
