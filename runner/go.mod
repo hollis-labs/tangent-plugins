@@ -3,7 +3,7 @@ module github.com/hollis-labs/tangent-plugins/runner
 go 1.26.6
 
 require (
-	github.com/hollis-labs/go-tether-client v0.4.0
+	github.com/hollis-labs/go-tether-client v0.8.0
 	github.com/hollis-labs/plugin-sdk v0.5.0
 	github.com/hollis-labs/tangent v0.16.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
