@@ -1,0 +1,78 @@
+# Tangent plugin declarations
+
+The build emits SDK manifest schema 2 as canonical JSON in `plugin.yaml`.
+The declaration has identity, strict SemVer plugin version (`0.2.0-dev`),
+protocol 2, runtime `subprocess`, a native server entry under `bin/`, and the
+SDK artifact inventory/tree digest. Tool schemas are inline objects, not JSON
+strings. Effects are `read`, `write` or `destructive`: runner health reads,
+runner stop is destructive, and the other tools write. Opening a board or review
+writes Tangent interaction state even when the application data is only read.
+
+Compatibility is against public contracts, not the Tangent application version.
+These bundles require Tangent plugin contract `1.0.0` through `1.99.99` and native
+binary-runner contract `1.0.0` through `1.99.99`. The host adoption must expose and
+check those explicit contracts; unresolved contracts refuse activation. The
+extension has its own `schema_version: 1`. Unknown extension versions/fields,
+unresolved kinds and unbound tool references must fail before registration.
+
+## Tangent extension
+
+```json
+{
+  "schema_version": 1,
+  "kinds": [{"kind": "tangent.app-board", "version": "0.3", "package": "tangent.appboard"}],
+  "routes": [{"method": "POST", "path": "/api/plugins/torque-board/sync", "capability": "draft"}],
+  "mcp_tools": ["tangent.torque_open_board", "tangent.torque_sync_board"]
+}
+```
+
+`kinds` references exact host-approved definition versions/packages. These
+plugins do not own, republish or supply renderer assets for those definitions.
+Torque and Tesseract use `tangent.app-board@0.3` from `tangent.appboard`; GitHub
+uses `tangent.external-review@0.1` from `tangent.review`. Runner has no kind
+reference. Tangent resolves references through its approved definition catalog,
+not from executable self-declarations. Definition versions retain the catalog's
+version syntax; they are independent of the strict SemVer plugin version.
+
+`routes` preserves existing method/path and participant capability checks:
+board sync and runner launch require `draft`, runner sessions and GitHub state
+require `view`, GitHub actions require `resolve`. The host must enforce owner
+path admission, participant authorization, request limits and cookie isolation.
+A manifest does not grant route authority.
+
+`mcp_tools` contains names referencing the common `tools` list. That list alone
+owns description, input schema, effect and optional MCP annotations. No second
+schema or effect is declared in the Tangent block. Host admission resolves and
+publishes bindings only after validation and policy approval.
+
+## Requests and configuration
+
+Each manifest requests `mcp.reach` with host-owned metadata `{"tools": [...]}`
+listing the exact Tangent callback tool names used by that plugin. This is a
+review input, not a grant or the SDK's resolved scope transport. Host adoption
+must resolve approved tools to pinned definitions and bounded scopes, apply
+caller policy, and refuse unsupported required requests. It must not interpret
+this metadata as ambient MCP access. Current callbacks still use the existing
+hostclient; scoped stdio dispatch belongs to the host authority adoption.
+
+Torque declares its API URL field. Tesseract declares API URL/namespaces fields
+and a token secret reference, without a secret value or default. Runner and
+GitHub have no host-managed settings today; GitHub's `gh` authentication remains
+external application custody. These declarations do not implement secret
+resolution or broad environment inheritance. No host bearer or raw secret is
+placed in Init.Config by this migration.
+
+## Build and review
+
+`make dist` stages the native executable under `bin/` before invoking its
+`--manifest` build flag. That flag hashes its own executable without initializing
+clients or running tools, then uses SDK `TreeDigest` and `Encode`. Each current
+bundle has only the native payload; adding assets requires inventorying all
+regular payload files. `plugin.yaml` is excluded from the artifact digest.
+Review must pin the manifest separately along with identity/version, payload
+digest and grants; hosts verify the immutable reviewed bundle before launch.
+
+The SDK remains pinned to the existing development pseudo-version. No installed
+release pin is advanced. These bundles are source integration artifacts until
+the approved SDK release and Tangent decoder/compatibility adoption land.
+The messaging plugin is absent and is not represented by a placeholder.

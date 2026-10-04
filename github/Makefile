@@ -15,14 +15,12 @@ lint:
 build:
 	go build ./...
 
-# An installable plugin directory: the binary beside the plugin.yaml it emits
-# (tangent's host convention: `<binary> --manifest`, entrypoint beside the
-# manifest), so the manifest the host installs is generated from the code that
-# serves it.
+# A manifest-v2 plugin bundle: the native payload under bin/ and its
+# canonical JSON declaration.
 dist: test
-	mkdir -p $(DIST)
-	go build -o $(DIST)/$(BINARY) ./cmd/$(BINARY)
-	$(DIST)/$(BINARY) --manifest > $(DIST)/plugin.yaml
+	mkdir -p $(DIST)/bin
+	go build -o $(DIST)/bin/$(BINARY) ./cmd/$(BINARY)
+	$(DIST)/bin/$(BINARY) --manifest > $(DIST)/plugin.yaml
 	@echo "installable plugin at $(DIST)"
 
 clean:

@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 
-	"gopkg.in/yaml.v3"
-
+	"github.com/hollis-labs/plugin-sdk/capability"
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent-plugins/github/internal/github"
@@ -42,11 +43,12 @@ func (s *served) Init(_ context.Context, _ subprocess.InitParams) (subprocess.In
 	// plugin configuration, so it can never hold this plugin's credentials.
 	s.inner = github.New(github.GHAPI{}, client)
 	return subprocess.InitResult{
-		ID:          github.ID,
-		Name:        "GitHub PR review",
-		Version:     "0.1.0",
-		Description: github.Description,
-		Protocol:    subprocess.ProtocolVersion,
+		ID:                 github.ID,
+		Name:               "GitHub PR review",
+		Version:            "0.2.0-dev",
+		Description:        github.Description,
+		Protocol:           subprocess.ProtocolVersion,
+		CapabilityContract: capability.ContractVersion,
 	}, nil
 }
 
@@ -94,34 +96,47 @@ var (
 // before installation, read by the host at install and at boot, and fixed from
 // then on. A RUNNING child is still never asked what it serves.
 func emitManifest(out io.Writer) error {
-	manifest := tangentplugin.Manifest{
-		ID:          github.ID,
-		Name:        "GitHub PR review",
-		Description: github.Description,
-		Version:     "0.1.0",
-		Protocol:    subprocess.ProtocolVersion,
-		Entrypoint:  "tangent-plugin-github",
-		Tools: []tangentplugin.ToolDecl{
+	declaration := sdkmanifest.Manifest{
+		Capabilities:  []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Call the declared Tangent tools used by this integration", Metadata: json.RawMessage(`{"tools":["tangent.session_list","tangent.session_create","tangent.session_advance","tangent.surface_get"]}`)}},
+		SchemaVersion: sdkmanifest.SchemaVersion,
+		Config:        sdkmanifest.Config{},
+		Runtime:       sdkmanifest.Runtime,
+		Hosts:         map[string]sdkmanifest.HostRange{"tangent": {Min: "1.0.0", Max: "1.99.99"}},
+		ID:            github.ID,
+		Name:          "GitHub PR review",
+		Description:   github.Description,
+		Version:       "0.2.0-dev",
+		Protocol:      subprocess.ProtocolVersion,
+		Tools: []sdkmanifest.Tool{
 			{
 				Name:        github.OpenTool,
+				Effect:      "write",
 				Description: github.Description,
-				InputSchema: string(github.OpenSchema),
+				InputSchema: github.OpenSchema,
 			},
 		},
-		Routes: []tangentplugin.RouteDecl{
+	}
+	extension := tangentExtension{SchemaVersion: 1, Kinds: []kindRef{{Kind: github.Kind, Version: "0.1", Package: "tangent.review"}},
+		Routes: []routeDecl{
 			{Method: http.MethodPost, Path: github.StatePath, Capability: string(tangentplugin.CapabilityView)},
 			{Method: http.MethodPost, Path: github.ActionPath, Capability: "resolve"},
 		},
 	}
-	if err := manifest.Validate(); err != nil {
+	for _, tool := range declaration.Tools {
+		extension.MCPTools = append(extension.MCPTools, tool.Name)
+	}
+	raw, err := json.Marshal(extension)
+	if err != nil {
 		return err
 	}
-	encoder := yaml.NewEncoder(out)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(manifest); err != nil {
+	declaration.Tangent = raw
+	artifact, err := executableArtifact("bin/tangent-plugin-github")
+	if err != nil {
 		return err
 	}
-	return encoder.Close()
+	declaration.Artifact = artifact
+	declaration.Server = sdkmanifest.Server{Runtime: "binary", Entry: "bin/tangent-plugin-github", Engines: map[string]sdkmanifest.HostRange{"binary": {Min: "1.0.0", Max: "1.99.99"}}}
+	return sdkmanifest.Encode(out, declaration)
 }
 
 func main() {

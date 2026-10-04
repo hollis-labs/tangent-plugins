@@ -6,8 +6,6 @@ github.com/google/jsonschema-go v0.4.3 h1:/DBOLZTfDow7pe2GmaJNhltueGTtDKICi8V8p+
 github.com/google/jsonschema-go v0.4.3/go.mod h1:r5quNTdLOYEz95Ru18zA0ydNbBuYoo9tgaYcxEYhJVE=
 github.com/hollis-labs/go-mcp v0.13.0 h1:hYSV+/Kiq87p5TOQDSHIQ3MF+hgG2X61V0rmOjHMlmE=
 github.com/hollis-labs/go-mcp v0.13.0/go.mod h1:Ff+towTWDfy6lheDalxfzZh15RwWiKM4yQKW91Pr+eM=
-github.com/hollis-labs/plugin-sdk v0.5.0 h1:xcMeVrYqIKz00fO2c2/asD/yDrb+pitU9p4hvqHUye8=
-github.com/hollis-labs/plugin-sdk v0.5.0/go.mod h1:+FcTow9tco3OoINjc5LSCkm8RZzWSLNG1tTCzLSQuHs=
 github.com/hollis-labs/plugin-sdk v0.6.2-0.20261003211221-5934f3aed260 h1:bvojG3qJMUc/7Ld3mqTmLhH18uNlxHwAKf+m01kInPI=
 github.com/hollis-labs/plugin-sdk v0.6.2-0.20261003211221-5934f3aed260/go.mod h1:GW8/S59GT15wKNQu62XvGArq7yLsceNDEa5TA3wFud0=
 github.com/hollis-labs/tangent v0.16.0 h1:VbkYOh+ghNR3+TnY+ZRcACF8TPeChS65/KbvFJdk0to=
@@ -30,7 +28,3 @@ golang.org/x/time v0.16.0 h1:vMb6ptszcQMkcwiRTAuNNU50gom6++Q/6gY2hDM6VDE=
 golang.org/x/time v0.16.0/go.mod h1:rVKOqvZeKvrDKTQiAHJ7wmwP0RzleSphoEA9RcdLA0s=
 golang.org/x/tools v0.42.0 h1:uNgphsn75Tdz5Ji2q36v/nsFSfR/9BRFvqhGBaJGd5k=
 golang.org/x/tools v0.42.0/go.mod h1:Ma6lCIwGZvHK6XtgbswSoWroEkhugApmsXyrUmBhfr0=
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
-gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
-gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=

@@ -14,14 +14,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/hollis-labs/plugin-sdk/capability"
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent-plugins/runner/internal/runner"
@@ -82,36 +82,46 @@ var (
 )
 
 func emitManifest(out io.Writer) error {
-	manifest := tangentplugin.Manifest{
-		ID:          runner.ID,
-		Name:        runner.New().Name(),
-		Description: runner.New().Description(),
-		Version:     runner.New().Version(),
-		Protocol:    subprocess.ProtocolVersion,
-		Entrypoint:  "tangent-plugin-runner",
-		Tools: []tangentplugin.ToolDecl{
+	declaration := sdkmanifest.Manifest{
+		Capabilities:  []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Call the declared Tangent tools used by this integration", Metadata: json.RawMessage(`{"tools":["tangent.turns_enqueue","tangent.turn_await","tangent.turn_ack"]}`)}},
+		SchemaVersion: sdkmanifest.SchemaVersion,
+		Config:        sdkmanifest.Config{},
+		Runtime:       sdkmanifest.Runtime,
+		Hosts:         map[string]sdkmanifest.HostRange{"tangent": {Min: "1.0.0", Max: "1.99.99"}},
+		ID:            runner.ID,
+		Name:          runner.New().Name(),
+		Description:   runner.New().Description(),
+		Version:       runner.New().Version(),
+		Protocol:      subprocess.ProtocolVersion,
+		Tools: []sdkmanifest.Tool{
 			{
 				Name:        runner.LaunchTool,
+				Effect:      "write",
 				Description: runner.LaunchToolDescription,
-				InputSchema: string(runner.LaunchToolSchema),
+				InputSchema: runner.LaunchToolSchema,
 			},
 			{
 				Name:        runner.SendTurnTool,
+				Effect:      "write",
 				Description: runner.SendTurnToolDescription,
-				InputSchema: string(runner.SendTurnToolSchema),
+				InputSchema: runner.SendTurnToolSchema,
 			},
 			{
 				Name:        runner.HealthTool,
+				Effect:      "read",
 				Description: runner.HealthToolDescription,
-				InputSchema: string(runner.HealthToolSchema),
+				InputSchema: runner.HealthToolSchema,
 			},
 			{
 				Name:        runner.StopTool,
+				Effect:      "destructive",
 				Description: runner.StopToolDescription,
-				InputSchema: string(runner.StopToolSchema),
+				InputSchema: runner.StopToolSchema,
 			},
 		},
-		Routes: []tangentplugin.RouteDecl{
+	}
+	extension := tangentExtension{SchemaVersion: 1, Kinds: nil,
+		Routes: []routeDecl{
 			{
 				Method:     http.MethodPost,
 				Path:       runner.LaunchPath,
@@ -124,15 +134,21 @@ func emitManifest(out io.Writer) error {
 			},
 		},
 	}
-	if err := manifest.Validate(); err != nil {
+	for _, tool := range declaration.Tools {
+		extension.MCPTools = append(extension.MCPTools, tool.Name)
+	}
+	raw, err := json.Marshal(extension)
+	if err != nil {
 		return err
 	}
-	encoder := yaml.NewEncoder(out)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(manifest); err != nil {
+	declaration.Tangent = raw
+	artifact, err := executableArtifact("bin/tangent-plugin-runner")
+	if err != nil {
 		return err
 	}
-	return encoder.Close()
+	declaration.Artifact = artifact
+	declaration.Server = sdkmanifest.Server{Runtime: "binary", Entry: "bin/tangent-plugin-runner", Engines: map[string]sdkmanifest.HostRange{"binary": {Min: "1.0.0", Max: "1.99.99"}}}
+	return sdkmanifest.Encode(out, declaration)
 }
 
 func main() {

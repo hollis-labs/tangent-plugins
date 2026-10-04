@@ -21,14 +21,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/hollis-labs/plugin-sdk/capability"
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent-plugins/torque/internal/torque"
@@ -115,40 +115,54 @@ var (
 // before installation, read by the host at install and at boot, and fixed from
 // then on. A RUNNING child is still never asked what it serves.
 func emitManifest(out io.Writer) error {
-	manifest := tangentplugin.Manifest{
-		ID:          torque.ID,
-		Name:        torque.New().Name(),
-		Description: torque.New().Description(),
-		Version:     torque.New().Version(),
-		Protocol:    subprocess.ProtocolVersion,
-		Entrypoint:  "tangent-plugin-torque",
-		Tools: []tangentplugin.ToolDecl{
+	declaration := sdkmanifest.Manifest{
+		Capabilities:  []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Call the declared Tangent tools used by this integration", Metadata: json.RawMessage(`{"tools":["tangent.session_create","tangent.session_advance","tangent.surface_get","tangent.interaction_cancel"]}`)}},
+		SchemaVersion: sdkmanifest.SchemaVersion,
+		Config:        sdkmanifest.Config{Fields: map[string]sdkmanifest.Field{"api_url": {Type: "string", Label: "Torque API URL", Env: "TANGENT_TORQUE_API_URL"}}},
+		Runtime:       sdkmanifest.Runtime,
+		Hosts:         map[string]sdkmanifest.HostRange{"tangent": {Min: "1.0.0", Max: "1.99.99"}},
+		ID:            torque.ID,
+		Name:          torque.New().Name(),
+		Description:   torque.New().Description(),
+		Version:       torque.New().Version(),
+		Protocol:      subprocess.ProtocolVersion,
+		Tools: []sdkmanifest.Tool{
 			{
 				Name:        torque.OpenTool,
+				Effect:      "write",
 				Description: torque.OpenToolDescription,
-				InputSchema: string(torque.OpenToolSchema),
+				InputSchema: torque.OpenToolSchema,
 			},
 			{
 				Name:        torque.SyncTool,
+				Effect:      "write",
 				Description: torque.SyncToolDescription,
-				InputSchema: string(torque.SyncToolSchema),
+				InputSchema: torque.SyncToolSchema,
 			},
 		},
-		Routes: []tangentplugin.RouteDecl{{
+	}
+	extension := tangentExtension{SchemaVersion: 1, Kinds: []kindRef{{Kind: torque.EnvelopeType, Version: "0.3", Package: "tangent.appboard"}},
+		Routes: []routeDecl{{
 			Method:     http.MethodPost,
 			Path:       torque.SyncPath,
 			Capability: string(tangentplugin.CapabilityDraft),
 		}},
 	}
-	if err := manifest.Validate(); err != nil {
+	for _, tool := range declaration.Tools {
+		extension.MCPTools = append(extension.MCPTools, tool.Name)
+	}
+	raw, err := json.Marshal(extension)
+	if err != nil {
 		return err
 	}
-	encoder := yaml.NewEncoder(out)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(manifest); err != nil {
+	declaration.Tangent = raw
+	artifact, err := executableArtifact("bin/tangent-plugin-torque")
+	if err != nil {
 		return err
 	}
-	return encoder.Close()
+	declaration.Artifact = artifact
+	declaration.Server = sdkmanifest.Server{Runtime: "binary", Entry: "bin/tangent-plugin-torque", Engines: map[string]sdkmanifest.HostRange{"binary": {Min: "1.0.0", Max: "1.99.99"}}}
+	return sdkmanifest.Encode(out, declaration)
 }
 
 func main() {

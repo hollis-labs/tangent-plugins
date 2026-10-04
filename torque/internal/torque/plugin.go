@@ -139,7 +139,7 @@ func NewWithClient(client *Client) *Plugin { return &Plugin{client: client} }
 
 func (p *Plugin) ID() string      { return ID }
 func (p *Plugin) Name() string    { return "Torque board" }
-func (p *Plugin) Version() string { return "0.1.1" }
+func (p *Plugin) Version() string { return "0.2.0-dev" }
 
 func (p *Plugin) Description() string {
 	return "Puts Torque's task list on a tangent.app-board: one agent call opens it, " +

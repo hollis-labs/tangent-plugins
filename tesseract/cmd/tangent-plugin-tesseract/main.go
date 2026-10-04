@@ -28,14 +28,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/hollis-labs/plugin-sdk/capability"
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent-plugins/tesseract/internal/tesseract"
@@ -123,40 +123,54 @@ var (
 // before installation, read by the host at install and at boot, and fixed from
 // then on. A RUNNING child is still never asked what it serves.
 func emitManifest(out io.Writer) error {
-	manifest := tangentplugin.Manifest{
-		ID:          tesseract.ID,
-		Name:        tesseract.New().Name(),
-		Description: tesseract.New().Description(),
-		Version:     tesseract.New().Version(),
-		Protocol:    subprocess.ProtocolVersion,
-		Entrypoint:  "tangent-plugin-tesseract",
-		Tools: []tangentplugin.ToolDecl{
+	declaration := sdkmanifest.Manifest{
+		Capabilities:  []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Call the declared Tangent tools used by this integration", Metadata: json.RawMessage(`{"tools":["tangent.session_create","tangent.session_advance","tangent.surface_get","tangent.interaction_cancel"]}`)}},
+		SchemaVersion: sdkmanifest.SchemaVersion,
+		Config:        sdkmanifest.Config{Fields: map[string]sdkmanifest.Field{"api_url": {Type: "string", Label: "Tesseract API URL", Env: "TANGENT_TESSERACT_API_URL"}, "namespaces": {Type: "string", Label: "Review namespaces", Env: "TANGENT_TESSERACT_NAMESPACES"}}, Secrets: map[string]sdkmanifest.Secret{"token": {Label: "Tesseract token", Env: "TANGENT_TESSERACT_TOKEN"}}},
+		Runtime:       sdkmanifest.Runtime,
+		Hosts:         map[string]sdkmanifest.HostRange{"tangent": {Min: "1.0.0", Max: "1.99.99"}},
+		ID:            tesseract.ID,
+		Name:          tesseract.New().Name(),
+		Description:   tesseract.New().Description(),
+		Version:       tesseract.New().Version(),
+		Protocol:      subprocess.ProtocolVersion,
+		Tools: []sdkmanifest.Tool{
 			{
 				Name:        tesseract.OpenTool,
+				Effect:      "write",
 				Description: tesseract.OpenToolDescription,
-				InputSchema: string(tesseract.OpenToolSchema),
+				InputSchema: tesseract.OpenToolSchema,
 			},
 			{
 				Name:        tesseract.SyncTool,
+				Effect:      "write",
 				Description: tesseract.SyncToolDescription,
-				InputSchema: string(tesseract.SyncToolSchema),
+				InputSchema: tesseract.SyncToolSchema,
 			},
 		},
-		Routes: []tangentplugin.RouteDecl{{
+	}
+	extension := tangentExtension{SchemaVersion: 1, Kinds: []kindRef{{Kind: tesseract.EnvelopeType, Version: "0.3", Package: "tangent.appboard"}},
+		Routes: []routeDecl{{
 			Method:     http.MethodPost,
 			Path:       tesseract.SyncPath,
 			Capability: string(tangentplugin.CapabilityDraft),
 		}},
 	}
-	if err := manifest.Validate(); err != nil {
+	for _, tool := range declaration.Tools {
+		extension.MCPTools = append(extension.MCPTools, tool.Name)
+	}
+	raw, err := json.Marshal(extension)
+	if err != nil {
 		return err
 	}
-	encoder := yaml.NewEncoder(out)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(manifest); err != nil {
+	declaration.Tangent = raw
+	artifact, err := executableArtifact("bin/tangent-plugin-tesseract")
+	if err != nil {
 		return err
 	}
-	return encoder.Close()
+	declaration.Artifact = artifact
+	declaration.Server = sdkmanifest.Server{Runtime: "binary", Entry: "bin/tangent-plugin-tesseract", Engines: map[string]sdkmanifest.HostRange{"binary": {Min: "1.0.0", Max: "1.99.99"}}}
+	return sdkmanifest.Encode(out, declaration)
 }
 
 func main() {
