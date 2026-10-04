@@ -28,6 +28,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/hollis-labs/plugin-sdk/capability"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent-plugins/torque/internal/torque"
@@ -61,11 +62,12 @@ func (s *served) Init(_ context.Context, _ subprocess.InitParams) (subprocess.In
 	// plugin configuration, so it can never hold this plugin's credentials.
 	s.inner = torque.New().WithToolCaller(client)
 	return subprocess.InitResult{
-		ID:          torque.ID,
-		Name:        s.inner.Name(),
-		Version:     s.inner.Version(),
-		Description: s.inner.Description(),
-		Protocol:    subprocess.ProtocolVersion,
+		ID:                 torque.ID,
+		Name:               s.inner.Name(),
+		Version:            s.inner.Version(),
+		Description:        s.inner.Description(),
+		Protocol:           subprocess.ProtocolVersion,
+		CapabilityContract: capability.ContractVersion,
 	}, nil
 }
 

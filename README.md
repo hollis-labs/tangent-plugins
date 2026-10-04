@@ -24,6 +24,16 @@ schedule. Tangent's binary stays domain-free.
 Each plugin's README documents its tools. Tangent's
 [`docs/mcp-integration.md`](https://github.com/hollis-labs/tangent/blob/main/docs/mcp-integration.md) links the installed-plugin guides.
 
+## Protocol-2 source integration
+
+The runner, torque and tesseract modules now pin plugin-sdk to
+`v0.6.2-0.20261003211221-5934f3aed260` and acknowledge capability contract 1.
+Their generated manifests advertise protocol 2; they require a protocol-2 host
+and cannot replace binaries installed under a protocol-1 Tangent. The GitHub
+plugin is unchanged. This is a source integration for isolated smoke tests:
+replace the temporary SDK pin with an approved release before activation.
+Nothing is installed or deployed by this change.
+
 ## Build and install
 
 ```bash

@@ -21,6 +21,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/hollis-labs/plugin-sdk/capability"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent-plugins/runner/internal/runner"
@@ -42,11 +43,12 @@ func (s *served) Init(_ context.Context, _ subprocess.InitParams) (subprocess.In
 	s.client = client
 	s.inner = runner.New().WithToolCaller(client)
 	return subprocess.InitResult{
-		ID:          runner.ID,
-		Name:        s.inner.Name(),
-		Version:     s.inner.Version(),
-		Description: s.inner.Description(),
-		Protocol:    subprocess.ProtocolVersion,
+		ID:                 runner.ID,
+		Name:               s.inner.Name(),
+		Version:            s.inner.Version(),
+		Description:        s.inner.Description(),
+		Protocol:           subprocess.ProtocolVersion,
+		CapabilityContract: capability.ContractVersion,
 	}, nil
 }
 
