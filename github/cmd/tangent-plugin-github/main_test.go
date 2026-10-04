@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent-plugins/github/internal/github"
-	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
-	"gopkg.in/yaml.v3"
 )
 
 func TestManifestDeclaresProtectedRoutes(t *testing.T) {
@@ -14,14 +13,15 @@ func TestManifestDeclaresProtectedRoutes(t *testing.T) {
 	if err := emitManifest(&out); err != nil {
 		t.Fatal(err)
 	}
-	var manifest tangentplugin.Manifest
-	if err := yaml.Unmarshal(out.Bytes(), &manifest); err != nil {
+	declaration, err := sdkmanifest.Decode(&out)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manifest.Validate(); err != nil {
+	var manifest tangentExtension
+	if err := sdkmanifest.DecodeExtension(declaration.Tangent, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.Tools) != 1 || manifest.Tools[0].Name != github.OpenTool {
+	if len(declaration.Tools) != 1 || declaration.Tools[0].Name != github.OpenTool {
 		t.Fatal("missing PR tool")
 	}
 	capabilities := map[string]string{}

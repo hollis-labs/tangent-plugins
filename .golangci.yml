@@ -92,6 +92,26 @@ linters:
     generated: lax
 
     rules:
+      # The native payload is the running executable returned by os.Executable,
+      # not a path from plugin configuration or a request.
+      - path: cmd/tangent-plugin-[^/]+/manifest\.go$
+        linters:
+          - gosec
+        text: 'G304:'
+        source: 'os\.Open\(executable\)'
+      # Bundle fixtures copy that same executable into a private t.TempDir.
+      - path: cmd/tangent-plugin-[^/]+/manifest_test\.go$
+        linters:
+          - gosec
+        text: 'G304:'
+        source: 'os\.ReadFile\(executable\)'
+      # Entry comes from the strictly validated, generated declaration. These
+      # private native-binary fixtures require executable bits for VerifyBundle.
+      - path: cmd/tangent-plugin-[^/]+/manifest_test\.go$
+        linters:
+          - gosec
+        text: 'G(306|703):'
+        source: 'os\.WriteFile\(entry,'
       - path: _test\.go
         linters:
           - errcheck

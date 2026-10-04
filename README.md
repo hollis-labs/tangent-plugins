@@ -26,13 +26,19 @@ Each plugin's README documents its tools. Tangent's
 
 ## Protocol-2 source integration
 
-The runner, torque and tesseract modules now pin plugin-sdk to
-`v0.6.2-0.20261003211221-5934f3aed260` and acknowledge capability contract 1.
-Their generated manifests advertise protocol 2; they require a protocol-2 host
-and cannot replace binaries installed under a protocol-1 Tangent. The GitHub
-plugin is unchanged. This is a source integration for isolated smoke tests:
-replace the temporary SDK pin with an approved release before activation.
-Nothing is installed or deployed by this change.
+All four modules pin plugin-sdk to
+`v0.6.2-0.20261003211221-5934f3aed260`, use protocol 2 and acknowledge
+capability contract 1. Init and generated manifests report `0.2.0-dev` until
+the first protocol-2 release tag. They require a protocol-2 host with SDK
+manifest-v2 support; legacy Tangent cannot load these bundles. Replace the
+temporary SDK pin with the approved `plugin-mcp/v0.1.0` release before activation.
+No installed-plugin version pin, existing release, installation or deployment
+changes here. The messaging plugin is not in this repository.
+
+`--manifest` emits canonical JSON (valid `plugin.yaml` content), including the
+native `bin/` entry and its SHA-256 artifact inventory. See
+[the manifest contract](docs/manifest-v2.md) for the Tangent extension and the
+host contracts required before activation.
 
 ## Build and install
 
@@ -45,8 +51,9 @@ tangent plugin list
 Restart `tangent` to load what you installed. From a Tangent checkout,
 `make install-plugins` installs the release of these plugins that Tangent pins.
 
-A plugin inherits the environment of the `tangent` that spawns it, so set its
-variables where `tangent` runs:
+The current plugin implementation reads these environment variables. The manifest
+declares settings and secret references for host review; it does not implement
+configuration delivery, a secret broker or permission to inherit the host environment:
 
 | Variable | Plugin | Default |
 |---|---|---|
@@ -72,19 +79,19 @@ dist/tangent.plugin.<p>/    built, installable plugin directory (gitignored)
 in `PLUGINS`. Adding a plugin means adding its directory name there. Each plugin
 is released under its own module tag (`torque/v0.1.0`).
 
-This mirrors [cerberus-plugins](https://github.com/hollis-labs/cerberus-plugins)
-with one deliberate difference: the manifest comes from `<binary> --manifest`
-and the entrypoint sits beside `plugin.yaml`, because that is Tangent's host
-convention. Cerberus uses `write-dist` and a `bin/` directory.
+Each bundle contains `plugin.yaml` beside `bin/tangent-plugin-<p>`. The manifest
+hashes the already-built native executable. Hosts must review the declaration
+and verify the same immutable payload before spawning it.
 
 ## Writing a plugin
 
-A plugin imports two packages from Tangent and one from the SDK:
+A plugin uses public Tangent surfaces and SDK subprocess/manifest packages:
 
 ```go
-tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"            // surfaces, capability, plugin.yaml, ToolCaller
+tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"            // surfaces, participant capability, ToolCaller
               "github.com/hollis-labs/tangent/pkg/plugin/hostclient" // Tangent's tool surface over MCP
               "github.com/hollis-labs/plugin-sdk/subprocess"         // the wire
+              "github.com/hollis-labs/plugin-sdk/manifest"           // declarations
 ```
 
 Never anything under `tangent/internal/`. Go refuses it from another module
