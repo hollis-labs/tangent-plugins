@@ -64,9 +64,13 @@ placed in Init.Config by this migration.
 
 ## Build and review
 
-`make dist` stages the native executable under `bin/` before invoking its
-`--manifest` build flag. That flag hashes its own executable without initializing
-clients or running tools, then uses SDK `TreeDigest` and `Encode`. Each current
+`make dist` builds a fresh staged bundle with the native executable under `bin/`
+before invoking its `--manifest` build flag. Only a successful build/declaration
+replaces the generated distribution directory; repeat builds remove stale files,
+including legacy root-level binaries. A failed build leaves the previous bundle
+in place. Distribution directories are generated output, not installed plugins
+or writable operator data. `--manifest` hashes its own executable without
+initializing clients or running tools, then uses SDK `TreeDigest` and `Encode`. Each current
 bundle has only the native payload; adding assets requires inventorying all
 regular payload files. `plugin.yaml` is excluded from the artifact digest.
 Review must pin the manifest separately along with identity/version, payload
