@@ -19,9 +19,9 @@ func TestManifestVerifiesStagedPayload(t *testing.T) {
 	if err := emitManifest(&out); err != nil {
 		t.Fatal(err)
 	}
-	declaration, err := sdkmanifest.Decode(&out)
-	if err != nil {
-		t.Fatal(err)
+	declaration, decodeErr := sdkmanifest.Decode(&out)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	var extension tangentExtension
 	if err := sdkmanifest.DecodeExtension(declaration.Tangent, &extension); err != nil {
@@ -49,13 +49,13 @@ func TestManifestVerifiesStagedPayload(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(entry), 0700); err != nil {
 		t.Fatal(err)
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
+	executable, executableErr := os.Executable()
+	if executableErr != nil {
+		t.Fatal(executableErr)
 	}
-	payload, err := os.ReadFile(executable)
-	if err != nil {
-		t.Fatal(err)
+	payload, readErr := os.ReadFile(executable)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	if err := os.WriteFile(entry, payload, 0700); err != nil {
 		t.Fatal(err)
@@ -86,9 +86,9 @@ func TestInitMatchesReviewedIdentity(t *testing.T) {
 	if err := emitManifest(&out); err != nil {
 		t.Fatal(err)
 	}
-	declaration, err := sdkmanifest.Decode(&out)
-	if err != nil {
-		t.Fatal(err)
+	declaration, decodeErr := sdkmanifest.Decode(&out)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	s := &served{}
 	result, err := s.Init(context.Background(), subprocess.InitParams{})
