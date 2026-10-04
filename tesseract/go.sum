@@ -8,6 +8,8 @@ github.com/hollis-labs/go-mcp v0.13.0 h1:hYSV+/Kiq87p5TOQDSHIQ3MF+hgG2X61V0rmOjH
 github.com/hollis-labs/go-mcp v0.13.0/go.mod h1:Ff+towTWDfy6lheDalxfzZh15RwWiKM4yQKW91Pr+eM=
 github.com/hollis-labs/plugin-sdk v0.5.0 h1:xcMeVrYqIKz00fO2c2/asD/yDrb+pitU9p4hvqHUye8=
 github.com/hollis-labs/plugin-sdk v0.5.0/go.mod h1:+FcTow9tco3OoINjc5LSCkm8RZzWSLNG1tTCzLSQuHs=
+github.com/hollis-labs/plugin-sdk v0.6.2-0.20261003211221-5934f3aed260 h1:bvojG3qJMUc/7Ld3mqTmLhH18uNlxHwAKf+m01kInPI=
+github.com/hollis-labs/plugin-sdk v0.6.2-0.20261003211221-5934f3aed260/go.mod h1:GW8/S59GT15wKNQu62XvGArq7yLsceNDEa5TA3wFud0=
 github.com/hollis-labs/tangent v0.16.0 h1:VbkYOh+ghNR3+TnY+ZRcACF8TPeChS65/KbvFJdk0to=
 github.com/hollis-labs/tangent v0.16.0/go.mod h1:frPh4zCwgeLjhCEc6KnVo6qlkeb/0HMJj5gfx50nyk8=
 github.com/modelcontextprotocol/go-sdk v1.8.0 h1:KIvahhYqwtbeniWVPs3TcXEA7b8jEtwfBpOTAI+Urx4=
