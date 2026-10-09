@@ -154,6 +154,12 @@ func New(config Config, client *http.Client) (*Stage, error) {
 	}{config.EndpointURL, config.CallerID, config.ProviderHint, config.ModelHint, s.instructionDigest, int64(config.Timeout)})
 	return s, nil
 }
+
+// Close releases idle transport connections after the owner has canceled and
+// joined all active stage calls. It does not cancel or wait for active calls.
+// Custom transport middleware must forward CloseIdleConnections to its transport.
+func (s *Stage) Close() { s.client.CloseIdleConnections() }
+
 func (s *Stage) InstructionDigest() string { return s.instructionDigest }
 func (s *Stage) ConfigDigest() string      { return s.configDigest }
 func (s *Stage) Spec(priority int) pipeline.StageSpec {

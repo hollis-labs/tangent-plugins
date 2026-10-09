@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -340,4 +341,32 @@ func TestPipelineFailureCacheAndShutdownPending(t *testing.T) {
 	if _, err = r.Run(canceled, input().Message, pipeline.State{}); !errors.Is(err, pipeline.ErrPending) || len(fresh.rows) != 0 {
 		t.Fatal("shutdown stored failure", err)
 	}
+}
+
+func TestCloseReleasesIdleConnection(t *testing.T) {
+	closed := make(chan struct{}, 1)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(encoded(t, `{"summary":"Finished fixture call."}`))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			select {
+			case closed <- struct{}{}:
+			default:
+			}
+		}
+	}
+	server.Start()
+	defer server.Close()
+	stage := stageFor(t, server)
+	if _, err := stage.Run(context.Background(), input()); err != nil {
+		t.Fatal(err)
+	}
+	stage.Close()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("idle connection was not closed")
+	}
+	stage.Close()
 }

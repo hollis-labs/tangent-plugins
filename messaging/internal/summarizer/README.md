@@ -56,6 +56,11 @@ spec := stage.Spec(configuredPriority)
 // pipeline.New([]pipeline.StageSpec{spec}, durableResultStore, explicitBounds)
 ```
 
+After canceling and joining all tracked stage calls, the owner calls `Stage.Close()`
+to release idle connections, including adapter-created Unix transport clones.
+It neither cancels nor joins active calls. Custom middleware must forward
+`CloseIdleConnections` to its inner transport; use a dedicated stage client.
+
 Concrete SQLite, prepared enqueue payloads and atomic sink/cursor settlement are
 not owned here. Tests use only synthetic HTTP servers and private files; they do
 not call a provider or running service.
