@@ -104,12 +104,11 @@ piece, so raise it against Tangent rather than reaching in. Tangent's
 [`docs/writing-a-plugin.md`](https://github.com/hollis-labs/tangent/blob/main/docs/writing-a-plugin.md)
 is the guide.
 
-For this source compatibility migration, each `go.mod` requires the published
-Tangent adoption candidate `9d88652ea86eb2023bc9dfe9eec999c2a8f7ae72` via its
-Go pseudo-version, with no `replace`. That candidate supplies public handler
-types from the same released SDK. It is not a Tangent release pin; the final
-pin follows Tangent's green landing and release. To develop against a local
-Tangent checkout, use a Go workspace, which is gitignored here:
+Each `go.mod` requires the published Tangent v0.17.0 release and
+`libs/plugin-mcp` v0.1.1, with no `replace`. Their public handler types use the
+same SDK package. This replaces the temporary adoption-candidate dependency;
+module pins do not install a daemon or activate plugins. To develop against a
+local Tangent checkout, use a Go workspace, which is gitignored here:
 
 ```bash
 go work init ./torque ../tangent   # adjust the path to your checkout

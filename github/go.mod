@@ -6,7 +6,7 @@ toolchain go1.26.9
 
 require (
 	github.com/hollis-labs/libs/plugin-mcp v0.1.1
-	github.com/hollis-labs/tangent v0.16.1-0.20261009050933-9d88652ea86e
+	github.com/hollis-labs/tangent v0.17.0
 )
 
 require (
