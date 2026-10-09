@@ -19,6 +19,7 @@ import (
 // polls with bounded backoff and joins them on shutdown. It supplies the real
 // configured caller, the saved publication mapping, and any explicit choice.
 type Controller struct {
+	gate       chan struct{}
 	store      Store
 	dispatcher Dispatcher
 	host       Host
@@ -33,7 +34,7 @@ func New(store Store, dispatcher Dispatcher, host Host, caller string, timeout t
 	if _, err := gomsg.ParseURN(caller); err != nil {
 		return nil, ErrRefused
 	}
-	return &Controller{store, dispatcher, host, caller, timeout}, nil
+	return &Controller{gate: make(chan struct{}, 1), store: store, dispatcher: dispatcher, host: host, caller: caller, timeout: timeout}, nil
 }
 
 func validID(value string) bool {
@@ -96,7 +97,54 @@ func prepare(binding Binding, item ResolvedItem, caller string, choice Choice) (
 // Advance never treats queue acceptance, binding handoff, or an unknown state
 // as delivered. Each invocation performs at most one send and one delivery
 // read, under a finite child budget of the owner-supplied context.
+// lock serializes worker advancement and explicit HTTP retry in this loaded
+// owner. Waiting is canceled with the request; no second send can race a receipt.
+func (c *Controller) lock(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case c.gate <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (c *Controller) unlock() { <-c.gate }
+
 func (c *Controller) Advance(ctx context.Context, binding Binding, item ResolvedItem, choice Choice) (Record, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if err := c.lock(ctx); err != nil {
+		return Record{}, err
+	}
+	defer c.unlock()
+	// Await continues to carry the original immutable resolution. A saved retry
+	// is an existing user action, so later worker polls resume it, never the old
+	// terminal predecessor and never a newly invented retry/key.
+	if choice.Previous == nil && choice.ActionID == "" && choice.OverrideInterrupt == nil {
+		original, err := prepare(binding, item, c.caller, choice)
+		if err != nil {
+			return Record{}, err
+		}
+		latest, readErr := c.store.Latest(ctx, binding.ItemID)
+		if readErr != nil && !errors.Is(readErr, ErrNotFound) {
+			return Record{}, readErr
+		}
+		if readErr == nil {
+			if latest.Prepared.Binding != original.Binding || latest.Prepared.Resolution != original.Resolution || latest.Prepared.CallerURN != original.CallerURN {
+				return latest, ErrConflict
+			}
+			if latest.Prepared.ActionID != "" {
+				flag := latest.Prepared.Interrupt
+				choice = Choice{OverrideInterrupt: &flag, ActionID: latest.Prepared.ActionID, Previous: latest.Prepared.Previous}
+			}
+		}
+	}
+	return c.advance(ctx, binding, item, choice)
+}
+
+func (c *Controller) advance(ctx context.Context, binding Binding, item ResolvedItem, choice Choice) (Record, error) {
 	if err := ctx.Err(); err != nil {
 		return Record{}, err
 	}
@@ -205,6 +253,12 @@ func knownState(state tether.ReplyState) bool {
 // The transport must enforce the real participant guard before invoking it.
 // It reuses the recorded resolution/body and preserves the failed predecessor.
 func (c *Controller) Retry(ctx context.Context, itemID string, expectedVersion int64, actionID string, interrupt bool) (Record, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if err := c.lock(ctx); err != nil {
+		return Record{}, err
+	}
+	defer c.unlock()
 	if !validID(itemID) || !validID(actionID) || expectedVersion < 1 {
 		return Record{}, ErrRefused
 	}
@@ -216,7 +270,7 @@ func (c *Controller) Retry(ctx context.Context, itemID string, expectedVersion i
 	if record.Prepared.ActionID == actionID {
 		// A browser retry of the same click is the same action/key, including
 		// after ambiguous acceptance. It cannot change the saved choice.
-		if record.Prepared.Interrupt != interrupt || record.Prepared.Previous == nil {
+		if record.Prepared.Interrupt != interrupt || record.Prepared.Previous == nil || record.Prepared.Previous.Version != expectedVersion {
 			return record, ErrConflict
 		}
 		previous = *record.Prepared.Previous
@@ -226,7 +280,7 @@ func (c *Controller) Retry(ctx context.Context, itemID string, expectedVersion i
 	binding, resolution := record.Prepared.Binding, record.Prepared.Resolution
 	item := ResolvedItem{ItemID: binding.ItemID, SessionID: binding.SessionID, TurnID: binding.TurnID, AgentID: binding.AgentID,
 		Kind: binding.Kind, Replyable: true, Source: &binding.Source, Resolution: &resolution}
-	return c.Advance(ctx, binding, item, Choice{OverrideInterrupt: &interrupt, ActionID: actionID, Previous: &previous})
+	return c.advance(ctx, binding, item, Choice{OverrideInterrupt: &interrupt, ActionID: actionID, Previous: &previous})
 }
 
 func closedError(err error) error {

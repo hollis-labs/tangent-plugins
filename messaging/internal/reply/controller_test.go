@@ -320,3 +320,67 @@ func TestOrdinaryOrMismatchedItemRefusedBeforePreparation(t *testing.T) {
 		}
 	}
 }
+
+func TestControllerWaitIsContextBoundAndRetryDoesNotReenter(t *testing.T) {
+	c, s, d, _, binding, item := fixture(t)
+	if err := c.lock(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.Advance(ctx, binding, item, Choice{}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := c.Retry(ctx, binding.ItemID, 1, "action", false); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if len(s.rows) != 0 || len(d.sends) != 0 {
+		t.Fatal("waiting request performed effects")
+	}
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer waitCancel()
+	if _, err := c.Advance(waitCtx, binding, item, Choice{}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waiting admission: %v", err)
+	}
+	c.unlock()
+	d.state = tether.ReplyUndeliverable
+	previous, err := c.Advance(context.Background(), binding, item, Choice{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.state = tether.ReplyDelivered
+	retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Second)
+	defer retryCancel()
+	if _, err = c.Retry(retryCtx, binding.ItemID, previous.Version, "explicit", false); err != nil {
+		t.Fatalf("retry reentered lock: %v", err)
+	}
+}
+
+func TestWorkerResumesSavedExplicitRetryRatherThanTerminalPredecessor(t *testing.T) {
+	c, s, d, h, binding, item := fixture(t)
+	d.state = tether.ReplyUndeliverable
+	first, err := c.Advance(context.Background(), binding, item, Choice{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.state = tether.ReplyQueued
+	queued, err := c.Retry(context.Background(), binding.ItemID, first.Version, "user-action", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued.Prepared.Key == first.Prepared.Key || len(d.sends) != 2 || h.acks != 0 {
+		t.Fatal("retry not distinct")
+	}
+	d.state = tether.ReplyDelivered
+	completed, err := c.Advance(context.Background(), binding, item, Choice{})
+	if err != nil || !completed.Acknowledged || completed.Prepared.ActionID != "user-action" || len(d.sends) != 2 || h.acks != 1 {
+		t.Fatalf("worker retry resume %+v %v", completed, err)
+	}
+	old, err := s.get(key(first.Prepared))
+	if err != nil || !old.TerminalFailure() || old.Acknowledged {
+		t.Fatal("predecessor lost")
+	}
+	if _, err = c.Retry(context.Background(), binding.ItemID, first.Version+1, "user-action", false); !errors.Is(err, ErrConflict) {
+		t.Fatal("same action changed predecessor version")
+	}
+}
