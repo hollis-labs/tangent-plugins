@@ -2,8 +2,8 @@
 
 `tangent.plugin.messaging` is a manifest-v2/protocol-2 subprocess plugin. It
 reads explicitly configured Tether channels and enqueues immutable original
-text plus bounded stage metadata through public `tangent.turns_enqueue` 1.1.
-It uses Tangent v0.18.0's public contract, the published `libs/message-pipeline`
+text plus bounded stage metadata through public `tangent.turns_enqueue` 1.2.
+It uses Tangent v0.19.0's public contract, the published `libs/message-pipeline`
 v0.1.0 library and builtin
 [stateless summarizer](internal/summarizer/README.md).
 
@@ -101,6 +101,8 @@ needed to resolve the pending publication.
 ## User-resolved replies
 
 Only settled local publication-to-item mappings can supply a reply target.
+Previously saved contract 1.1 requests replay with their original bytes and
+matching receipt version; the upgrade does not normalize or rewrite them.
 The configured endpoint/channel scope is snapshotted; retained records from
 other sources cannot dispatch through a replacement client. Ordinary
 publications remain nonreplyable, including ones with supplied runtime labels.

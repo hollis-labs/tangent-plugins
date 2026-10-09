@@ -138,7 +138,7 @@ func TestSinkReceiptRequiresActualMatchingSuccessfulHandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid := map[string]any{"contract_version": "1.1", "item_id": "earned-item", "agent_id": p.AgentID, "kind": "checkpoint", "state": "queued", "revision": 1}
+	valid := map[string]any{"contract_version": plugin.AgentTurnContractVersion, "item_id": "earned-item", "agent_id": p.AgentID, "kind": "checkpoint", "state": "queued", "revision": 1}
 	for _, name := range []string{"valid", "wrong agent", "wrong kind", "fake runtime", "control id", "error result", "ambiguous transport", "duplicate receipt"} {
 		t.Run(name, func(t *testing.T) {
 			body := make(map[string]any)
@@ -205,4 +205,59 @@ func canonical(t *testing.T, raw []byte) []byte {
 		t.Fatal(err)
 	}
 	return result
+}
+
+func TestSavedContractReplayPreservesVersionAndBytes(t *testing.T) {
+	p := publication()
+	prepared, err := New(nil).Prepare(p, pipeline.State{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var base plugin.AgentTurnRequest
+	if err = json.Unmarshal(prepared, &base); err != nil || base.ContractVersion != plugin.AgentTurnContractVersion {
+		t.Fatal("new preparation does not use published contract", err)
+	}
+	for _, version := range []string{"1.1", "1.2", "9.9"} {
+		t.Run(version, func(t *testing.T) {
+			request := base
+			request.ContractVersion = version
+			saved, encodeErr := json.Marshal(request)
+			if encodeErr != nil {
+				t.Fatal(encodeErr)
+			}
+			original := bytes.Clone(saved)
+			calls := 0
+			mismatched := false
+			sink := New(callerFunc(func(_ context.Context, method string, arguments any) (plugin.ToolResult, error) {
+				calls++
+				raw, marshalErr := json.Marshal(arguments)
+				if marshalErr != nil || method != enqueueTool || !bytes.Equal(raw, canonical(t, saved)) {
+					t.Fatal("saved version or payload changed before replay", marshalErr)
+				}
+				receiptVersion := version
+				if mismatched {
+					receiptVersion = "9.9"
+				}
+				body, marshalErr := json.Marshal(map[string]any{"contract_version": receiptVersion, "item_id": "earned-item", "agent_id": p.AgentID, "kind": "checkpoint"})
+				return plugin.ToolResult{Content: body}, marshalErr
+			}))
+			_, deliverErr := sink.Deliver(context.Background(), saved)
+			if version == "9.9" {
+				if !errors.Is(deliverErr, ErrContract) || calls != 0 {
+					t.Fatal("unsupported saved contract reached host", deliverErr, calls)
+				}
+			} else {
+				if deliverErr != nil || calls != 1 {
+					t.Fatal("supported saved replay refused", deliverErr, calls)
+				}
+				mismatched = true
+				if _, deliverErr = sink.Deliver(context.Background(), saved); !errors.Is(deliverErr, ErrContract) || calls != 2 {
+					t.Fatal("receipt version mismatch accepted", deliverErr, calls)
+				}
+			}
+			if !bytes.Equal(saved, original) {
+				t.Fatal("saved request bytes mutated")
+			}
+		})
+	}
 }

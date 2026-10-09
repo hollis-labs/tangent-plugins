@@ -40,7 +40,7 @@ func TestPublicChannelToMCPReplaySettlesEarnedItemAndJoins(t *testing.T) {
 		if deliveries.Add(1) == 1 {
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: `{"code":"synthetic_lost_receipt"}`}}}, nil
 		}
-		raw, err := json.Marshal(map[string]any{"contract_version": "1.1", "item_id": "same-earned-item", "agent_id": request.Source.AgentID, "kind": request.Kind})
+		raw, err := json.Marshal(map[string]any{"contract_version": request.ContractVersion, "item_id": "same-earned-item", "agent_id": request.Source.AgentID, "kind": request.Kind})
 		if err != nil {
 			return nil, err
 		}
