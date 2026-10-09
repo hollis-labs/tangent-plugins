@@ -72,9 +72,10 @@ func TestRoutedFinalUsesGenuineRuntimeIdentity(t *testing.T) {
 }
 
 func TestInvalidPreparedRequestsNeverReachToolCaller(t *testing.T) {
+	calls := 0
 	sink := New(callerFunc(func(context.Context, string, any) (plugin.ToolResult, error) {
-		t.Fatal("invalid prepared request reached sink")
-		return plugin.ToolResult{}, nil
+		calls++
+		return plugin.ToolResult{}, errors.New("unexpected tool invocation")
 	}))
 	raw, err := sink.Prepare(publication(), pipeline.State{})
 	if err != nil {
@@ -97,7 +98,9 @@ func TestInvalidPreparedRequestsNeverReachToolCaller(t *testing.T) {
 			for i := range 16 {
 				r.StageTrace = append(r.StageTrace, plugin.TurnStageTrace{StageID: strings.Repeat("s", 127) + string(rune('a'+i)), StageVersion: strings.Repeat("v", 128), Outcome: "failed", FailureCode: "stage_error"})
 			}
-			r.Annotations = []plugin.TurnAnnotation{{SchemaVersion: 1, StageID: "s", StageVersion: "1", Kind: "summary", Summary: plugin.TurnSummary{Text: strings.Repeat("€", 600)}}}
+			for _, id := range []string{"s", "t"} {
+				r.Annotations = append(r.Annotations, plugin.TurnAnnotation{SchemaVersion: 1, StageID: id, StageVersion: "1", Kind: "summary", Summary: plugin.TurnSummary{Text: strings.Repeat("€", 600)}})
+			}
 			r.Summary = strings.Repeat("€", 600)
 		},
 	} {
@@ -107,17 +110,23 @@ func TestInvalidPreparedRequestsNeverReachToolCaller(t *testing.T) {
 				t.Fatal(decodeErr)
 			}
 			mutate(&request)
+			if name == "metadata too large" {
+				metadata, encodeErr := json.Marshal(map[string]any{"annotations": request.Annotations, "stage_trace": request.StageTrace})
+				if encodeErr != nil || len(metadata) <= plugin.MaxTurnStageMetadataBytes {
+					t.Fatal("adverse fixture did not exceed metadata bound", len(metadata), encodeErr)
+				}
+			}
 			changed, marshalErr := json.Marshal(request)
 			if marshalErr != nil {
 				t.Fatal(marshalErr)
 			}
-			if _, deliverErr := sink.Deliver(context.Background(), changed); !errors.Is(deliverErr, ErrContract) {
+			if _, deliverErr := sink.Deliver(context.Background(), changed); !errors.Is(deliverErr, ErrContract) || calls != 0 {
 				t.Fatal("invalid request accepted", deliverErr)
 			}
 		})
 	}
 	for _, malformed := range [][]byte{[]byte(`{"contract_version":"1.1","contract_version":"1.0"}`), []byte(`{"content":"\ud800"}`)} {
-		if _, err = sink.Deliver(context.Background(), malformed); !errors.Is(err, ErrContract) {
+		if _, err = sink.Deliver(context.Background(), malformed); !errors.Is(err, ErrContract) || calls != 0 {
 			t.Fatal("malformed saved bytes accepted", err)
 		}
 	}
