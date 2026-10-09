@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	_ "modernc.org/sqlite" // The ledger belongs to this adapter, not the pipeline library.
@@ -19,7 +20,12 @@ var ErrConflict = errors.New("messaging: ledger_conflict")
 
 // Ledger owns one private SQLite file under the host-provided DataDir.
 // Permissions provide local custody, not isolation from the same OS user.
-type Ledger struct{ db *sql.DB }
+type Ledger struct {
+	db        *sql.DB
+	owner     *os.File
+	closeOnce sync.Once
+	closeErr  error
+}
 
 // StoredPublication is a defensive snapshot of the durable obligation.
 type StoredPublication struct {
@@ -50,6 +56,16 @@ func OpenLedger(ctx context.Context, dataDir string) (*Ledger, error) {
 	if err != nil {
 		return nil, errors.New("messaging: data_dir_unavailable")
 	}
+	owner, err := lockLedger(root)
+	if err != nil {
+		return nil, errors.Join(err, root.Close())
+	}
+	accepted := false
+	defer func() {
+		if !accepted {
+			_ = owner.Close()
+		}
+	}()
 	fileInfo, statErr := root.Lstat("messaging.sqlite3")
 	if statErr == nil && (!fileInfo.Mode().IsRegular() || fileInfo.Mode().Perm() != 0600 || !currentOwner(fileInfo)) {
 		return nil, errors.Join(errors.New("messaging: private_ledger_required"), root.Close())
@@ -78,11 +94,40 @@ func OpenLedger(ctx context.Context, dataDir string) (*Ledger, error) {
 	if statErr != nil || !os.SameFile(pinned, current) {
 		return nil, errors.Join(errors.New("messaging: ledger_identity_changed"), db.Close())
 	}
-	ledger := &Ledger{db: db}
+	ledger := &Ledger{db: db, owner: owner}
 	if err := ledger.initialize(ctx); err != nil {
 		return nil, errors.Join(err, db.Close())
 	}
+	current, statErr = os.Lstat(filepath.Join(dataDir, "messaging.sqlite3"))
+	if statErr != nil || !os.SameFile(pinned, current) {
+		return nil, errors.Join(errors.New("messaging: ledger_identity_changed"), db.Close())
+	}
+	accepted = true
 	return ledger, nil
+}
+
+// One process owns stage execution for this DataDir. SQLite transactions alone
+// cannot prevent two providers running between the same Get and PutIfAbsent.
+func lockLedger(root *os.Root) (*os.File, error) {
+	info, err := root.Lstat("messaging.owner")
+	if err == nil && (!info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !currentOwner(info)) {
+		return nil, errors.New("messaging: private_owner_file_required")
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	file, err := root.OpenFile("messaging.owner", os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	info, err = file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !currentOwner(info) {
+		return nil, errors.Join(errors.New("messaging: private_owner_file_required"), file.Close())
+	}
+	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return nil, errors.Join(errors.New("messaging: ledger_already_owned"), file.Close())
+	}
+	return file, nil
 }
 
 func currentOwner(info os.FileInfo) bool {
@@ -106,12 +151,19 @@ CREATE TABLE IF NOT EXISTS publications (
  purge_receipt BLOB,
  PRIMARY KEY(source,message_id), UNIQUE(source,sequence));
 CREATE TABLE IF NOT EXISTS stage_results (key TEXT PRIMARY KEY, record BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS admission_refusals (
+ source TEXT NOT NULL, message_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+ payload_digest TEXT NOT NULL, payload_bytes INTEGER NOT NULL,
+ PRIMARY KEY(source,message_id,sequence,payload_digest));
 PRAGMA user_version=1;`)
 	return err
 }
 
 // Close must run only after all loaded workers and external calls have joined.
-func (l *Ledger) Close() error { return l.db.Close() }
+func (l *Ledger) Close() error {
+	l.closeOnce.Do(func() { l.closeErr = errors.Join(l.db.Close(), l.owner.Close()) })
+	return l.closeErr
+}
 
 // Capture persists admitted input before processing. Replays preserve the
 // original; a later source tombstone is appended without recreating its body.
@@ -132,6 +184,9 @@ func (l *Ledger) Capture(ctx context.Context, p Publication) (StoredPublication,
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO publications(source,message_id,sequence,original) VALUES(?,?,?,?) ON CONFLICT(source,message_id) DO NOTHING`, p.Source.key(), p.MessageID, p.Sequence, raw); err != nil {
+		if ctx.Err() != nil {
+			return StoredPublication{}, ctx.Err()
+		}
 		return StoredPublication{}, ErrConflict
 	}
 	stored, old, err := loadPublication(ctx, tx, p.Source, p.MessageID)
@@ -142,7 +197,7 @@ func (l *Ledger) Capture(ctx context.Context, p Publication) (StoredPublication,
 		return stored, ErrConflict
 	}
 	if !bytes.Equal(old, raw) {
-		if !p.Purged || stored.Publication.SenderURN != p.SenderURN {
+		if !p.Purged || stored.Publication.Purged || stored.Publication.SenderURN != p.SenderURN {
 			return stored, ErrConflict
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE publications SET purge_receipt=COALESCE(purge_receipt,?) WHERE source=? AND message_id=?`, p.Envelope, p.Source.key(), p.MessageID); err != nil {

@@ -7,7 +7,7 @@ import (
 )
 
 func testConfig() Config {
-	return Config{SchemaVersion: 1, EndpointRef: "test-tether", TetherAddress: "http://127.0.0.1:8998", CallerURN: "msg://service/local/owner-inbox", Channels: []string{"owner-inbox"}, RequestTimeoutMS: 15000, ReconnectMinMS: 100, ReconnectMaxMS: 5000, HistoryLimit: 100}
+	return Config{SchemaVersion: 1, EndpointRef: "test-tether", TetherAddress: "http://127.0.0.1:8998", CallerURN: "msg://service/local/owner-inbox", Channels: []string{"owner-inbox"}, RequestTimeoutMS: 15000, ReconnectMinMS: 100, ReconnectMaxMS: 5000, HistoryLimit: 100, Stages: []StageConfig{{ID: "summarize", EndpointURL: "http://fixture.test/ai/chat", CallerID: "messaging-test"}}}
 }
 
 func TestConfigExplicitInputsAndBounds(t *testing.T) {
@@ -32,6 +32,11 @@ func TestConfigExplicitInputsAndBounds(t *testing.T) {
 		"unbounded request":         func(c *Config) { c.RequestTimeoutMS = 0 },
 		"backoff reversed":          func(c *Config) { c.ReconnectMaxMS = c.ReconnectMinMS - 1 },
 		"unbounded history":         func(c *Config) { c.HistoryLimit = 1001 },
+		"no stages":                 func(c *Config) { c.Stages = nil },
+		"unknown stage":             func(c *Config) { c.Stages[0].ID = "execute-agent" },
+		"unknown ai endpoint":       func(c *Config) { c.Stages[0].EndpointURL = "http://fixture.test/tools" },
+		"unbounded ai":              func(c *Config) { c.Stages[0].TimeoutMS = 60001 },
+		"ambient instructions":      func(c *Config) { c.Stages[0].InstructionPath = "~/.instruction" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := testConfig()

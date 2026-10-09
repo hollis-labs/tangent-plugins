@@ -79,7 +79,7 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 		}
 		return p, nil
 	}
-	if message.PurgedAt != nil || !utf8.Valid(message.Payload) {
+	if message.PurgedAt != nil || !strictJSON(message.Payload) {
 		return Publication{}, errors.New("messaging: text_refused")
 	}
 	var body struct {
