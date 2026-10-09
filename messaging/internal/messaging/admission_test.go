@@ -67,6 +67,7 @@ func TestAdmissionOrdinaryIsNonreplyableWithoutFabricatedBindings(t *testing.T) 
 func TestAdmissionRefusesMalformedWithoutLeakingBodies(t *testing.T) {
 	for name, change := range map[string]func(*tether.ChannelMessage){
 		"invalid sequence":    func(m *tether.ChannelMessage) { m.Seq = 0 },
+		"unsafe sequence":     func(m *tether.ChannelMessage) { m.Seq = 9007199254740992 },
 		"private destination": func(m *tether.ChannelMessage) { m.To.ID = "mailbox" },
 		"foreign channel":     func(m *tether.ChannelMessage) { m.Channel = "other" },
 		"unknown kind":        func(m *tether.ChannelMessage) { m.Metadata["kind"] = "terminal" },

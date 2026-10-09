@@ -62,7 +62,7 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 	if err := source.validate(); err != nil {
 		return Publication{}, err
 	}
-	if !identifier(message.ID, 256) || message.Seq <= 0 || string(message.Channel) != source.Channel || message.To.URN() != "msg://service/local/channel/"+source.Channel {
+	if !identifier(message.ID, 256) || message.Seq <= 0 || message.Seq > 9007199254740991 || string(message.Channel) != source.Channel || message.To.URN() != "msg://service/local/channel/"+source.Channel {
 		return Publication{}, errors.New("messaging: publication_identity_refused")
 	}
 	if _, err := gomsg.ParseURN(message.From.URN()); err != nil {
