@@ -158,6 +158,33 @@ func TestConsumerAdmissionRefusalBlocksLaterSettlementWithoutCallingStage(t *tes
 	}
 }
 
+func TestConsumerMalformedAttributionRefusesBeforeStage(t *testing.T) {
+	l, _ := openTestLedger(t)
+	p := &fakeProcessor{}
+	sink := &fakeSink{}
+	source := sourceFixture()
+	bad := routedMessage()
+	bad.Metadata["confidence"] = "invented"
+	later := routedMessage()
+	later.ID = "later"
+	later.Seq = 99
+	source.pages = []tether.ChannelMessagesResponse{{Channel: tether.Channel{Name: "owner-inbox", Address: "msg://service/local/channel/owner-inbox"}, Messages: []tether.ChannelMessage{bad, later}, NextSince: 1000}}
+	c := newTestConsumer(t, l, p, sink, source)
+	if err := c.history(context.Background(), testSource()); err == nil {
+		t.Fatal("admission refusal skipped")
+	}
+	if p.calls != 0 || len(sink.calls) != 0 {
+		t.Fatal("refused publication had effects")
+	}
+	var refusals int
+	if err := l.db.QueryRow(`SELECT COUNT(*) FROM admission_refusals`).Scan(&refusals); err != nil || refusals != 1 {
+		t.Fatal("refusal obligation not recorded", refusals, err)
+	}
+	if _, found, err := l.Cursor(context.Background(), testSource()); err != nil || found {
+		t.Fatal("source hint advanced cursor", err)
+	}
+}
+
 func TestConsumerLoadLifetimeAndUnloadJoinOwnedStream(t *testing.T) {
 	l, _ := openTestLedger(t)
 	source := sourceFixture()

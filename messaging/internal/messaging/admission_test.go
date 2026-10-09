@@ -70,6 +70,8 @@ func TestAdmissionRefusesMalformedWithoutLeakingBodies(t *testing.T) {
 		"private destination": func(m *tether.ChannelMessage) { m.To.ID = "mailbox" },
 		"foreign channel":     func(m *tether.ChannelMessage) { m.Channel = "other" },
 		"unknown kind":        func(m *tether.ChannelMessage) { m.Metadata["kind"] = "terminal" },
+		"unknown confidence":  func(m *tether.ChannelMessage) { m.Metadata["confidence"] = "invented" },
+		"oversized project":   func(m *tether.ChannelMessage) { m.Metadata["project_id"] = strings.Repeat("p", 257) },
 		"missing turn":        func(m *tether.ChannelMessage) { delete(m.Metadata, "turn_id") },
 		"sender mismatch":     func(m *tether.ChannelMessage) { m.Metadata["session_id"] = "foreign" },
 		"thread mismatch":     func(m *tether.ChannelMessage) { m.ThreadID = "foreign" },

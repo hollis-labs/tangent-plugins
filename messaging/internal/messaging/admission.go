@@ -110,6 +110,19 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 	if p.Original == "" || !utf8.ValidString(p.Original) || utf8.RuneCountInString(p.Original) > 65536 {
 		return Publication{}, errors.New("messaging: text_refused")
 	}
+	// Refuse malformed projected attribution BEFORE a billable stage runs,
+	// rather than discovering the public sink's limits after processing.
+	for _, field := range []string{"project_id", "workstream_id", "launch_id", "launch_display_name", "runtime", "stop_reason"} {
+		value := message.Metadata[field]
+		if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 256 {
+			return Publication{}, errors.New("messaging: source_metadata_refused")
+		}
+	}
+	switch message.Metadata["confidence"] {
+	case "", "exact", "heuristic", "none", "unknown":
+	default:
+		return Publication{}, errors.New("messaging: source_metadata_refused")
+	}
 	p.Metadata = make(map[string]string, len(message.Metadata))
 	for k, v := range message.Metadata {
 		p.Metadata[k] = v
