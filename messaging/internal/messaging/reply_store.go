@@ -151,6 +151,62 @@ func (s *ReplyStore) Latest(ctx context.Context, itemID string) (reply.Record, e
 	return record, err
 }
 
+// ReplyBindings visits a finite page of locally settled mappings. The cursor
+// is only a scan position, never a publication or delivery acknowledgement.
+// Terminal attempts remain in the ledger and explicit retry can make a new
+// pending attempt visible on a later pass.
+func (s *ReplyStore) ReplyBindings(ctx context.Context, after string, limit int) ([]reply.Binding, string, error) {
+	if limit < 1 || limit > 128 {
+		return nil, after, reply.ErrRefused
+	}
+	// Bind the scope as data in a fixed statement, never interpolate values or
+	// SQL fragments. The owner has at most eight configured sources.
+	keys := make([]string, 0, len(s.sources))
+	for source := range s.sources {
+		keys = append(keys, source.key())
+	}
+	scope, err := json.Marshal(keys)
+	if err != nil {
+		return nil, after, err
+	}
+	rows, err := s.ledger.db.QueryContext(ctx, `SELECT DISTINCT item_id FROM publications WHERE settled=1 AND item_id>? AND source IN (SELECT value FROM json_each(?)) ORDER BY item_id LIMIT ?`, after, string(scope), limit)
+	if err != nil {
+		return nil, after, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, after, errors.Join(err, rows.Close())
+		}
+		ids = append(ids, id)
+	}
+	if err = errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, after, err
+	}
+	var bindings []reply.Binding
+	next := ""
+	for _, id := range ids {
+		next = id
+		binding, bindingErr := s.Binding(ctx, id)
+		if bindingErr != nil {
+			return nil, after, bindingErr
+		}
+		if binding.Source.Origin != "routed" {
+			continue
+		}
+		record, loadErr := s.Latest(ctx, id)
+		if loadErr != nil && !errors.Is(loadErr, reply.ErrNotFound) {
+			return nil, after, loadErr
+		}
+		if loadErr == nil && (record.Acknowledged || record.TerminalFailure()) {
+			continue
+		}
+		bindings = append(bindings, binding)
+	}
+	return bindings, next, nil
+}
+
 func validReplyPreparation(p reply.Prepared, previous *reply.Reference) bool {
 	binding, resolution := p.Binding, p.Resolution
 	if binding.Source.Origin != "routed" || binding.Source.SenderURN != "msg://session/local/"+binding.SessionID ||

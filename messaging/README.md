@@ -8,8 +8,8 @@ v0.1.0 library and builtin
 [stateless summarizer](internal/summarizer/README.md).
 
 The source does not install or enable the plugin, change routing, start agents,
-reply, acknowledge messages, change JEV/key handling, or invoke follow-ups.
-Reply delivery is a separate integration. Summary text is untrusted display
+change JEV/key handling, or invoke follow-ups. Replies require an actual user
+resolution of a locally mapped routed item; summary text is untrusted display
 data, never permission to act. A configured live summarizer sends source text
 to its configured gateway; synthetic tests do not prove source redaction or
 provider availability. Secret redaction/retention and activation are separate
@@ -55,8 +55,7 @@ Unknown stages, malformed/duplicate JSON keys, invalid Unicode, missing source
 identity and embedded URL credentials refuse initialization.
 
 One builtin stage is registered in this MVP. The portable stage port supports
-future explicitly registered processors; this plugin does not pretend that
-unimplemented filters, replies or follow-ups are available.
+future explicitly registered processors; filters and follow-ups remain separate.
 
 ## Intake, persistence and replay
 
@@ -86,10 +85,10 @@ provider acceptance and local stage persistence.
 
 History is read serially per channel; reconnect uses the locally committed
 cursor and passes a pointer to zero when no cursor exists. Sequence gaps are
-legal. Unload cancels the loaded incarnation, joins channel readers and active
-stage executions, then closes ports and the ledger. Finite Load-call completion
-does not cancel subscriptions. A cleanup deadline retains ownership and reports
-failure rather than claiming a successful join.
+legal. Unload cancels the loaded incarnation, joins channel readers, active
+stage executions, reply polling and HTTP callbacks, then closes ports and the
+ledger. Finite Load-call completion does not cancel workers. A cleanup deadline
+retains ownership and reports failure rather than claiming a successful join.
 
 A genuine source purge records a retention outcome without processing or
 recreating its body. Previously captured originals remain in this private
@@ -99,10 +98,48 @@ health reports admission refusal, and the cursor remains pending. This is not
 a lossless archive of refused raw payloads. Source replay or a real purge is
 needed to resolve the pending publication.
 
+## User-resolved replies
+
+Only settled local publication-to-item mappings can supply a reply target.
+The configured endpoint/channel scope is snapshotted; retained records from
+other sources cannot dispatch through a replacement client. Ordinary
+publications remain nonreplyable, including ones with supplied runtime labels.
+The worker awaits the real host resolution only for a never-prepared item.
+It records the exact body, caller, interrupt choice and idempotency key before
+the dedicated public Tether `Reply` call. Initial interrupt comes from the
+immutable user resolution, with an absent flag meaning false; runtime reply
+and interrupt support are checked for the actual source session.
+
+Queue acceptance and a duplicate receipt do not mean delivered. The receipt
+is persisted before polling `ReplyDelivery`; actual delivered state is saved
+before `turn_ack`. An ambiguous send repeats the same saved body/key/flag.
+A saved receipt prevents another send. After host acknowledgement succeeds but
+its local write fails, the saved attempt resumes acknowledgement even when
+Await no longer returns that row. Absence itself never proves acknowledgement.
+Terminal refusal/undeliverable outcomes remain preserved and unacknowledged.
+
+`GET /api/plugins/messaging/delivery?item_id=...` returns body-free status and
+capabilities under the host's participant view guard. It sends no reply and
+does not acknowledge anything. `POST /api/plugins/messaging/retry` is a new
+explicit user action under the draft guard: it supplies `item_id`, the saved
+`expected_version`, a fresh `action_id` and an explicit `interrupt` flag. Only
+the latest terminal failed attempt can be superseded; the old attempt stays
+intact. Repeating the same click uses the saved action/key. Pending, unknown or
+delivered attempts cannot be replaced. Polling never manufactures user retries.
+One controller serializes worker and HTTP advancement; shutdown closes admission,
+cancels requests and joins callbacks before releasing private ledger custody.
+
+These capability/participant checks retain the accepted single-owner MVP
+boundary. Tether's full reply-to-sender authorization policy is separate
+before-1.0 work; source attribution and configured caller labels are not proof
+of authenticated human identity. No live reply or interrupt is exercised by
+synthetic fixtures.
+
 ## Checks and packaging
 
 From this module, `make test`, `make lint` and `make dist` use the public pins.
 Tests use private synthetic SQLite, channel/MCP and HTTP fixtures. They cover
 immutable stage/result snapshots, crash-boundary rollback, saved-request replay,
-source admission, reconnect cursors, and lifecycle joins. Packaging only builds
+source admission, reconnect cursors, reply receipt/delivery/ack recovery,
+explicit retry rollback and lifecycle joins. Packaging only builds
 the binary and emits a manifest whose artifact inventory binds that binary.

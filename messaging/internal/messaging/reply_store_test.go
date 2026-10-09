@@ -436,3 +436,111 @@ func TestReplyStoreConfigurationScopeDoesNotRouteRetainedOtherEndpoint(t *testin
 		t.Fatal("configuration change destroyed retained history", actual, err)
 	}
 }
+
+func TestReplyStoreScanKeepsTerminalHistoryAndFindsExplicitRetry(t *testing.T) {
+	ctx := context.Background()
+	ledger, store, prepared, _ := replyFixture(t)
+	bindings, cursor, err := store.ReplyBindings(ctx, "", 1)
+	if err != nil || len(bindings) != 1 || bindings[0] != prepared.Binding || cursor != prepared.Binding.ItemID {
+		t.Fatal("earned mapping not scanned", bindings, cursor, err)
+	}
+	if bindings, cursor, err = store.ReplyBindings(ctx, cursor, 1); err != nil || len(bindings) != 0 || cursor != "" {
+		t.Fatal("finite scan did not reset", bindings, cursor, err)
+	}
+	record, err := store.Prepare(ctx, prepared, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.FailureCode, record.FailureStatus = "reply_unsupported", 409
+	record, err = store.Update(ctx, record.Reference(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bindings, _, err = store.ReplyBindings(ctx, "", 1); err != nil || len(bindings) != 0 {
+		t.Fatal("polling would reopen terminal failure", bindings, err)
+	}
+	previous := record.Reference()
+	retry := prepared
+	retry.ActionID, retry.Previous = "explicit-action", &previous
+	retry.Key = testReplyKey(retry)
+	if _, err = store.Prepare(ctx, retry, &previous); err != nil {
+		t.Fatal(err)
+	}
+	if bindings, _, err = store.ReplyBindings(ctx, "", 1); err != nil || len(bindings) != 1 {
+		t.Fatal("saved user retry not visible to worker", bindings, err)
+	}
+	other, err := NewReplyStore(ctx, ledger, Source{EndpointRef: "other-daemon", Channel: prepared.Binding.Source.Channel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bindings, _, err = other.ReplyBindings(ctx, "", 1); err != nil || len(bindings) != 0 {
+		t.Fatal("scan leaked another endpoint", bindings, err)
+	}
+}
+
+type committedAckHost struct {
+	acks   int
+	awaits int
+}
+
+func (h *committedAckHost) Await(context.Context, string) ([]reply.ResolvedItem, error) {
+	h.awaits++
+	return nil, nil
+}
+func (h *committedAckHost) Ack(context.Context, string, string) error { h.acks++; return nil }
+
+func TestReplyStoreResumeAfterHostAckCommitsButLocalWriteFails(t *testing.T) {
+	ctx := context.Background()
+	ledger, store, prepared, data := replyFixture(t)
+	record, err := store.Prepare(ctx, prepared, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.Update(ctx, record.Reference(), acceptedReply(record))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.Update(ctx, record.Reference(), deliveredReply(record))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ledger.db.ExecContext(ctx, `CREATE TRIGGER fail_local_ack BEFORE UPDATE ON reply_attempts WHEN json_extract(NEW.record,'$.acknowledged')=1 BEGIN SELECT RAISE(ABORT,'owned acknowledgement write failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := &storedReplyDispatcher{binding: prepared.Binding}
+	host := &committedAckHost{}
+	controller, err := reply.New(store, dispatcher, host, prepared.CallerURN, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = controller.Resume(ctx, prepared.Binding.ItemID); err == nil || host.acks != 1 {
+		t.Fatal("actual ack/write gap not reached", host.acks, err)
+	}
+	saved, err := store.Latest(ctx, prepared.Binding.ItemID)
+	if err != nil || saved.Acknowledged || !reflect.DeepEqual(saved, record) {
+		t.Fatal("failed write erased delivered record", saved, err)
+	}
+	if err = ledger.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenLedger(ctx, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	store, err = NewReplyStore(ctx, reopened, testSource())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = reopened.db.ExecContext(ctx, `DROP TRIGGER fail_local_ack`); err != nil {
+		t.Fatal(err)
+	}
+	controller, err = reply.New(store, dispatcher, host, prepared.CallerURN, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := controller.Resume(ctx, prepared.Binding.ItemID)
+	if err != nil || !completed.Acknowledged || host.acks != 2 || host.awaits != 0 || dispatcher.sends != 0 || dispatcher.polls != 0 {
+		t.Fatal("saved delivery depended on disappeared await or resent reply", completed, err)
+	}
+}
