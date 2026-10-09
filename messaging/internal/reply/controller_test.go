@@ -384,3 +384,41 @@ func TestWorkerResumesSavedExplicitRetryRatherThanTerminalPredecessor(t *testing
 		t.Fatal("same action changed predecessor version")
 	}
 }
+
+type ackThenStoreFailure struct{ *fakeHost }
+
+func (h ackThenStoreFailure) Ack(ctx context.Context, id, res string) error {
+	if err := h.fakeHost.Ack(ctx, id, res); err != nil {
+		return err
+	}
+	h.store.failUpdate = true
+	return nil
+}
+func TestResumeAfterHostAckAndLocalWriteFailureNeedsNoAwait(t *testing.T) {
+	c, s, d, h, binding, item := fixture(t)
+	d.state = tether.ReplyDelivered
+	c.host = ackThenStoreFailure{h}
+	if _, err := c.Advance(context.Background(), binding, item, Choice{}); err == nil {
+		t.Fatal("local write failure hidden")
+	}
+	saved, err := s.Latest(context.Background(), binding.ItemID)
+	if err != nil || saved.Acknowledged || saved.Delivery == nil || saved.Delivery.State != tether.ReplyDelivered || h.acks != 1 {
+		t.Fatal("durable delivered evidence lost")
+	}
+	s.failUpdate = false
+	c.host = h
+	resumed, err := c.Resume(context.Background(), binding.ItemID)
+	if err != nil || !resumed.Acknowledged || h.acks != 2 || len(d.sends) != 1 || d.polls != 1 {
+		t.Fatalf("ack-only resume %+v %v", resumed, err)
+	}
+	if _, err = c.Resume(context.Background(), "unknown"); !errors.Is(err, ErrNotFound) {
+		t.Fatal("missing preparation invented")
+	}
+	foreign, err := New(s, d, h, "msg://service/local/another-owner", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = foreign.Resume(context.Background(), binding.ItemID); !errors.Is(err, ErrConflict) || h.acks != 2 {
+		t.Fatal("caller binding changed")
+	}
+}

@@ -249,6 +249,44 @@ func knownState(state tether.ReplyState) bool {
 	return false
 }
 
+// Resume advances an existing exact preparation, including an acknowledgement
+// after the host already consumed it and no longer returns it from Await. It
+// cannot create a new preparation, resolution, body, action or idempotency key.
+func (c *Controller) Resume(ctx context.Context, itemID string) (Record, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if err := c.lock(ctx); err != nil {
+		return Record{}, err
+	}
+	defer c.unlock()
+	if !validID(itemID) {
+		return Record{}, ErrRefused
+	}
+	record, err := c.store.Latest(ctx, itemID)
+	if err != nil {
+		return Record{}, err
+	}
+	if record.Version < 1 || record.Prepared.Binding.ItemID != itemID || record.Prepared.CallerURN != c.caller {
+		return record, ErrConflict
+	}
+	p := record.Prepared
+	binding, resolution := p.Binding, p.Resolution
+	item := ResolvedItem{ItemID: binding.ItemID, SessionID: binding.SessionID, TurnID: binding.TurnID, AgentID: binding.AgentID, Kind: binding.Kind, Replyable: true, Source: &binding.Source, Resolution: &resolution}
+	choice := Choice{}
+	if p.ActionID != "" {
+		flag := p.Interrupt
+		choice = Choice{OverrideInterrupt: &flag, ActionID: p.ActionID, Previous: p.Previous}
+	}
+	expected, err := prepare(binding, item, c.caller, choice)
+	if err != nil {
+		return record, err
+	}
+	if !reflect.DeepEqual(expected, p) {
+		return record, ErrConflict
+	}
+	return c.advance(ctx, binding, item, choice)
+}
+
 // Retry is an explicit new user action, never an Await/poll recovery method.
 // The transport must enforce the real participant guard before invoking it.
 // It reuses the recorded resolution/body and preserves the failed predecessor.
