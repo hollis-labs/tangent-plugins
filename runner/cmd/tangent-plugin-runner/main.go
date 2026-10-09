@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,10 +58,14 @@ func (s *served) Load(context.Context) (subprocess.LoadResult, error) {
 }
 
 func (s *served) Unload(context.Context) error {
-	if s.client == nil {
-		return nil
+	var failures []error
+	if s.inner != nil {
+		failures = append(failures, s.inner.Unload())
 	}
-	return s.client.Close()
+	if s.client != nil {
+		failures = append(failures, s.client.Close())
+	}
+	return errors.Join(failures...)
 }
 
 func (s *served) MCPCallTool(

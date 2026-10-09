@@ -171,7 +171,7 @@ func (p *Plugin) Unload() error {
 		Loaded:  false,
 		Enabled: false,
 	}
-	return nil
+	return p.engine.Close()
 }
 
 // MCPCallTool handles subprocess JSON-RPC tool calls from plugin-sdk.
@@ -265,11 +265,12 @@ func (p *Plugin) HTTPHandle(
 
 		list := make([]map[string]any, 0, len(p.engine.sessions))
 		for _, s := range p.engine.sessions {
+			liveState, _, _ := s.StateSnapshot()
 			list = append(list, map[string]any{
 				"session_id": s.ID,
 				"agent_id":   s.AgentID,
 				"mode":       s.Mode,
-				"live_state": s.LiveState,
+				"live_state": liveState,
 				"started_at": s.StartedAt,
 			})
 		}

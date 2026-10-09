@@ -31,7 +31,11 @@ All four modules use the SDK from the released
 capability contract 1. Init and generated manifests report `0.2.0-dev` until
 the first protocol-2 release tag. They require a protocol-2 host with SDK
 manifest-v2 support; legacy Tangent cannot load these bundles. The SDK accepts finite forward-call `context` budgets, including Init, and
-retains strict decoding and cancellation handling.
+retains strict decoding and cancellation handling. Accepted embedded runner
+sessions belong to the runner engine, not the completed launch request. Startup
+still observes caller cancellation; Stop and Unload cancel and reap owned
+embedded children within a finite cleanup budget. Delegated sessions remain
+owned by Tether.
 No installed-plugin version pin, existing release, installation or deployment
 changes here. The messaging plugin is not in this repository.
 
