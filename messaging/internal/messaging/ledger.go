@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -124,7 +125,11 @@ func lockLedger(root *os.Root) (*os.File, error) {
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !currentOwner(info) {
 		return nil, errors.Join(errors.New("messaging: private_owner_file_required"), file.Close())
 	}
-	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	descriptor := file.Fd()
+	if descriptor > uintptr(math.MaxInt) {
+		return nil, errors.Join(errors.New("messaging: invalid_owner_descriptor"), file.Close())
+	}
+	if err = syscall.Flock(int(descriptor), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return nil, errors.Join(errors.New("messaging: ledger_already_owned"), file.Close())
 	}
 	return file, nil

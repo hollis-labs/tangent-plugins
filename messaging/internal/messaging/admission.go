@@ -86,7 +86,8 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 		Text *string `json:"text"`
 		Body *string `json:"body"`
 	}
-	if message.ContentType == "application/json" {
+	switch message.ContentType {
+	case "application/json":
 		if err := json.Unmarshal(message.Payload, &p.Original); err != nil {
 			if err := json.Unmarshal(message.Payload, &body); err != nil || (body.Text == nil) == (body.Body == nil) {
 				return Publication{}, errors.New("messaging: text_refused")
@@ -97,13 +98,13 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 				p.Original = *body.Body
 			}
 		}
-	} else if message.ContentType == "text/plain" {
+	case "text/plain":
 		// Tether envelope payloads are JSON values; a plain-text publication is
 		// carried as a JSON string, not guessed from an arbitrary object.
 		if err := json.Unmarshal(message.Payload, &p.Original); err != nil {
 			return Publication{}, errors.New("messaging: text_refused")
 		}
-	} else {
+	default:
 		return Publication{}, errors.New("messaging: content_type_refused")
 	}
 	if p.Original == "" || !utf8.ValidString(p.Original) || utf8.RuneCountInString(p.Original) > 65536 {

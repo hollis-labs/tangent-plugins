@@ -63,7 +63,7 @@ func ReadConfig(reader io.Reader) (Config, error) {
 	if err = decoder.Decode(&config); err != nil {
 		return Config{}, errors.New("messaging: invalid configuration")
 	}
-	if err = decoder.Decode(new(any)); err != io.EOF {
+	if err = decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return Config{}, errors.New("messaging: trailing configuration")
 	}
 	if err = config.Validate(); err != nil {
@@ -133,8 +133,8 @@ func (c Config) RequestTimeout() time.Duration {
 	return time.Duration(c.RequestTimeoutMS) * time.Millisecond
 }
 
-func identifier(value string, max int) bool {
-	if value == "" || !utf8.ValidString(value) || len(value) > max || strings.TrimSpace(value) != value {
+func identifier(value string, limit int) bool {
+	if value == "" || !utf8.ValidString(value) || len(value) > limit || strings.TrimSpace(value) != value {
 		return false
 	}
 	for _, r := range value {

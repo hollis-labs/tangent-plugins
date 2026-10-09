@@ -70,8 +70,8 @@ func TestProtocolLoadAndUnloadJoinSubscriptionAndReap(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := process.Stop(context.Background()); err != nil {
-			t.Error(err)
+		if stopErr := process.Stop(context.Background()); stopErr != nil {
+			t.Error(stopErr)
 		}
 	})
 	cancel() // The completed handshake must not own the loaded subscription.

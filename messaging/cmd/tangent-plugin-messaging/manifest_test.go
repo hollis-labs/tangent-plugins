@@ -65,8 +65,8 @@ func TestManifestVerifiesStagedPayload(t *testing.T) {
 
 func fixtureConfiguration(t *testing.T, address string) (string, string) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0700); err != nil {
+	dir := filepath.Join(t.TempDir(), "private-data")
+	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	config := messaging.Config{SchemaVersion: 1, EndpointRef: "synthetic-tether", TetherAddress: address, CallerURN: "msg://service/local/messaging-fixture", Channels: []string{"owner-inbox"}, RequestTimeoutMS: 2000, ReconnectMinMS: 10, ReconnectMaxMS: 100, HistoryLimit: 10, Stages: []messaging.StageConfig{{ID: "summarize", EndpointURL: address, CallerID: "messaging-fixture", TimeoutMS: 2000}}}
@@ -98,8 +98,8 @@ func TestInitSnapshotsConfigurationWithoutCallingServices(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := s.Unload(context.Background()); err != nil {
-			t.Error(err)
+		if cleanupErr := s.Unload(context.Background()); cleanupErr != nil {
+			t.Error(cleanupErr)
 		}
 	})
 	if result.ID != pluginID || result.Version != pluginVersion || result.Protocol != 2 || result.CapabilityContract != capability.ContractVersion || calls.Load() != 0 {

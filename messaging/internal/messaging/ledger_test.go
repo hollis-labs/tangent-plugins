@@ -13,8 +13,8 @@ import (
 
 func openTestLedger(t *testing.T) (*Ledger, string) {
 	t.Helper()
-	data := t.TempDir()
-	if err := os.Chmod(data, 0700); err != nil {
+	data := filepath.Join(t.TempDir(), "private-data")
+	if err := os.Mkdir(data, 0700); err != nil {
 		t.Fatal(err)
 	}
 	l, err := OpenLedger(context.Background(), data)
@@ -58,16 +58,16 @@ func TestLedgerReplayPreservesOriginalAndPreparedRequest(t *testing.T) {
 	if err != nil || stored.Publication.Original != p.Original || string(stored.Prepared) != `{"idempotency_key":"saved-key","content":"exact original","summary":"saved result"}` {
 		t.Fatalf("replay lost immutable data: %+v %v", stored, err)
 	}
-	if cursor, found, err := resumed.Cursor(ctx, p.Source); err != nil || found || cursor != 0 {
-		t.Fatalf("preparation advanced cursor: %d %v %v", cursor, found, err)
+	if cursor, found, cursorErr := resumed.Cursor(ctx, p.Source); cursorErr != nil || found || cursor != 0 {
+		t.Fatalf("preparation advanced cursor: %d %v %v", cursor, found, cursorErr)
 	}
-	if err := resumed.Prepare(ctx, p.Source, p.MessageID, []byte(`{"content":"changed"}`)); !errors.Is(err, ErrConflict) {
+	if err = resumed.Prepare(ctx, p.Source, p.MessageID, []byte(`{"content":"changed"}`)); !errors.Is(err, ErrConflict) {
 		t.Fatal("changed replay accepted", err)
 	}
-	if err := resumed.Settle(ctx, p.Source, p.MessageID, 0, SinkReceipt{ItemID: "sink-item", IdempotencyKey: p.Key()}); err != nil {
+	if err = resumed.Settle(ctx, p.Source, p.MessageID, 0, SinkReceipt{ItemID: "sink-item", IdempotencyKey: p.Key()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := resumed.Settle(ctx, p.Source, p.MessageID, 0, SinkReceipt{ItemID: "sink-item", IdempotencyKey: p.Key()}); err != nil {
+	if err = resumed.Settle(ctx, p.Source, p.MessageID, 0, SinkReceipt{ItemID: "sink-item", IdempotencyKey: p.Key()}); err != nil {
 		t.Fatal("same receipt replay refused", err)
 	}
 	stored, err = resumed.Publication(ctx, p.Source, p.MessageID)
@@ -177,10 +177,10 @@ func TestLedgerPurgeRecordsRetentionWithoutEnqueueOrOriginalMutation(t *testing.
 	if err != nil || !stored.Purged || stored.Publication.Original != p.Original {
 		t.Fatalf("source purge replaced captured original: %+v %v", stored, err)
 	}
-	if err := l.Prepare(ctx, p.Source, p.MessageID, []byte(`{"content":"recreated"}`)); !errors.Is(err, ErrConflict) {
+	if err = l.Prepare(ctx, p.Source, p.MessageID, []byte(`{"content":"recreated"}`)); !errors.Is(err, ErrConflict) {
 		t.Fatal("purged source recreated", err)
 	}
-	if err := l.SettlePurge(ctx, p.Source, p.MessageID, 0); err != nil {
+	if err = l.SettlePurge(ctx, p.Source, p.MessageID, 0); err != nil {
 		t.Fatal(err)
 	}
 	stored, err = l.Publication(ctx, p.Source, p.MessageID)
@@ -218,13 +218,18 @@ func TestLedgerRequiresPrivateDataDirectoryAndFile(t *testing.T) {
 	}
 	parent := t.TempDir()
 	data := filepath.Join(parent, "data")
-	if err := os.Mkdir(data, 0755); err != nil {
+	if err := os.Mkdir(data, 0750); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := OpenLedger(ctx, data); err == nil {
 		t.Fatal("public data root accepted")
 	}
-	if err := os.Chmod(data, 0700); err != nil {
+	root, rootErr := os.OpenRoot(parent)
+	if rootErr != nil {
+		t.Fatal(rootErr)
+	}
+	defer root.Close()
+	if err := root.Chmod("data", 0700); err != nil {
 		t.Fatal(err)
 	}
 	other := filepath.Join(parent, "other")

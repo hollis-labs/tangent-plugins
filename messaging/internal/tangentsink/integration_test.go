@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -61,16 +62,16 @@ func TestPublicChannelToMCPReplaySettlesEarnedItemAndJoins(t *testing.T) {
 			if r.URL.Query().Get("since") == "0" {
 				page.Messages = []tether.ChannelMessage{message}
 			}
-			if err := json.NewEncoder(w).Encode(page); err != nil {
-				t.Error(err)
+			if writeErr := json.NewEncoder(w).Encode(page); writeErr != nil {
+				t.Error(writeErr)
 			}
 		case "/channels/owner-inbox/subscribe":
 			if r.URL.Query().Get("since") != "42" {
 				t.Error("subscription did not use committed receipt cursor")
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
-			if _, err := fmt.Fprint(w, ": owned subscription\n\n"); err != nil {
-				t.Error(err)
+			if _, writeErr := fmt.Fprint(w, ": owned subscription\n\n"); writeErr != nil {
+				t.Error(writeErr)
 			}
 			w.(http.Flusher).Flush()
 			close(subscribed)
@@ -88,8 +89,8 @@ func TestPublicChannelToMCPReplaySettlesEarnedItemAndJoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeSource()
-	dir := t.TempDir()
-	if err = os.Chmod(dir, 0700); err != nil {
+	dir := filepath.Join(t.TempDir(), "private-data")
+	if err = os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	ledger, err := messaging.OpenLedger(context.Background(), dir)

@@ -91,11 +91,11 @@ func TestInvalidPreparedRequestsNeverReachToolCaller(t *testing.T) {
 			r.Annotations = []plugin.TurnAnnotation{{SchemaVersion: 1, StageID: "s", StageVersion: "1", Kind: "summary", Summary: plugin.TurnSummary{Text: "other"}}}
 		},
 		"timeout drift": func(r *plugin.AgentTurnRequest) {
-			r.StageTrace = []plugin.TurnStageTrace{{StageID: "s", StageVersion: "1", Outcome: "timed_out", FailureCode: "stage_failed"}}
+			r.StageTrace = []plugin.TurnStageTrace{{StageID: "s", StageVersion: "1", Outcome: "timed_out", FailureCode: "stage_error"}}
 		},
 		"metadata too large": func(r *plugin.AgentTurnRequest) {
 			for i := range 16 {
-				r.StageTrace = append(r.StageTrace, plugin.TurnStageTrace{StageID: strings.Repeat("s", 127) + string(rune('a'+i)), StageVersion: strings.Repeat("v", 128), Outcome: "failed", FailureCode: "stage_failed"})
+				r.StageTrace = append(r.StageTrace, plugin.TurnStageTrace{StageID: strings.Repeat("s", 127) + string(rune('a'+i)), StageVersion: strings.Repeat("v", 128), Outcome: "failed", FailureCode: "stage_error"})
 			}
 			r.Annotations = []plugin.TurnAnnotation{{SchemaVersion: 1, StageID: "s", StageVersion: "1", Kind: "summary", Summary: plugin.TurnSummary{Text: strings.Repeat("€", 600)}}}
 			r.Summary = strings.Repeat("€", 600)
@@ -103,16 +103,16 @@ func TestInvalidPreparedRequestsNeverReachToolCaller(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var request plugin.AgentTurnRequest
-			if err := json.Unmarshal(raw, &request); err != nil {
-				t.Fatal(err)
+			if decodeErr := json.Unmarshal(raw, &request); decodeErr != nil {
+				t.Fatal(decodeErr)
 			}
 			mutate(&request)
-			changed, err := json.Marshal(request)
-			if err != nil {
-				t.Fatal(err)
+			changed, marshalErr := json.Marshal(request)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
 			}
-			if _, err = sink.Deliver(context.Background(), changed); !errors.Is(err, ErrContract) {
-				t.Fatal("invalid request accepted", err)
+			if _, deliverErr := sink.Deliver(context.Background(), changed); !errors.Is(deliverErr, ErrContract) {
+				t.Fatal("invalid request accepted", deliverErr)
 			}
 		})
 	}
