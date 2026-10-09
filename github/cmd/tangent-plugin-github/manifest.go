@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
+	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 )
 
 // tangentExtension contains host bindings, never tool schemas or grants.
