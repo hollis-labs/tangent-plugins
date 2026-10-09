@@ -20,6 +20,7 @@ import (
 // ActiveSession represents one running agent session under supervision.
 type ActiveSession struct {
 	mu           sync.RWMutex
+	ctx          context.Context
 	ID           string
 	AgentID      string
 	AgentLabel   string
@@ -39,6 +40,7 @@ type ActiveSession struct {
 	// exiting, or Stop. It is what tells a session's reply pump to leave.
 	stopped  chan struct{}
 	stopOnce sync.Once
+	reaped   chan struct{}
 
 	// writeMu makes one write to the process's stdin atomic. Two writers now
 	// share it — an operator calling runner_send_turn and the reply pump — and
@@ -80,6 +82,11 @@ func (s *ActiveSession) RecordTurnResponse() (turnID string, turnsCount int) {
 // Engine manages both embedded subprocesses and delegated Tether sessions.
 type Engine struct {
 	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	closed       bool
+	starting     map[string]struct{}
+	launches     sync.WaitGroup
 	sessions     map[string]*ActiveSession
 	tetherClient *tether.Client
 	toolCaller   tangentplugin.ToolCaller
@@ -92,7 +99,12 @@ func NewEngine(logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// #nosec G118 -- Engine owns this cancellation and calls it in Close/Unload.
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
+		ctx:       ctx,
+		cancel:    cancel,
+		starting:  make(map[string]struct{}),
 		sessions:  make(map[string]*ActiveSession),
 		logger:    logger,
 		replyPoll: DefaultReplyPollInterval,
@@ -125,6 +137,16 @@ func (e *Engine) SetTetherClient(c *tether.Client) {
 
 // Launch starts an agent session (either embedded subprocess or delegated via Tether).
 func (e *Engine) Launch(ctx context.Context, params LaunchParams) (LaunchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return LaunchResult{}, err
+	}
+	if err := e.ctx.Err(); err != nil {
+		return LaunchResult{}, fmt.Errorf("runner: engine closed: %w", err)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stopEngine := context.AfterFunc(e.ctx, cancel)
+	defer stopEngine()
+	defer cancel()
 	if params.AgentID == "" {
 		return LaunchResult{}, errors.New("runner: agent_id is required")
 	}
@@ -186,6 +208,10 @@ func (e *Engine) launchTether(ctx context.Context, params LaunchParams) (LaunchR
 	}
 
 	e.mu.Lock()
+	if e.closed || ctx.Err() != nil {
+		e.mu.Unlock()
+		return LaunchResult{}, fmt.Errorf("runner: delegated launch completed after cancellation: %w", errors.Join(ctx.Err(), e.ctx.Err()))
+	}
 	e.sessions[sess.ID] = &ActiveSession{
 		ID:           sess.ID,
 		AgentID:      params.AgentID,
@@ -216,12 +242,49 @@ func (e *Engine) launchEmbedded(
 	lifecycle Lifecycle,
 	params LaunchParams,
 ) (LaunchResult, error) {
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return LaunchResult{}, errors.New("runner: engine closed")
+	}
+	_, starting := e.starting[sessionID]
+	if existing := e.sessions[sessionID]; existing != nil {
+		state, _, _ := existing.StateSnapshot()
+		if state != "stopped" {
+			starting = true
+		}
+		if existing.reaped != nil {
+			select {
+			case <-existing.reaped:
+			default:
+				starting = true
+			}
+		}
+	}
+	if starting {
+		e.mu.Unlock()
+		return LaunchResult{}, fmt.Errorf("runner: session %s is already active", sessionID)
+	}
+	e.starting[sessionID] = struct{}{}
+	e.launches.Add(1)
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.starting, sessionID)
+		e.mu.Unlock()
+		e.launches.Done()
+	}()
 	command := params.Command
 	if command == "" {
 		command = "cat" // Safe fallback command that echoes stdin
 	}
 
-	cmdCtx, cancel := context.WithCancel(ctx)
+	// Startup remains cancellable by the caller. Once accepted, the engine
+	// owns the session until Stop, Close or natural exit, rather than borrowing
+	// the completed RPC's lifetime.
+	cmdCtx, cancel := context.WithCancel(e.ctx)
+	stopStartup := context.AfterFunc(ctx, cancel)
+	defer stopStartup()
 	// #nosec G204 -- launching agent subprocess as requested by caller
 	cmd := exec.CommandContext(cmdCtx, command, params.Args...)
 
@@ -259,6 +322,7 @@ func (e *Engine) launchEmbedded(
 	sieve := NewStreamSieve(sessionID)
 
 	active := &ActiveSession{
+		ctx:          cmdCtx,
 		ID:           sessionID,
 		AgentID:      params.AgentID,
 		AgentLabel:   params.AgentLabel,
@@ -274,14 +338,29 @@ func (e *Engine) launchEmbedded(
 		Correlations: params.Correlations,
 		cancel:       cancel,
 		stopped:      make(chan struct{}),
+		reaped:       make(chan struct{}),
 	}
 
 	e.mu.Lock()
+	if e.closed || ctx.Err() != nil {
+		e.mu.Unlock()
+		cancel()
+		_ = cmd.Wait()
+		if err := ctx.Err(); err != nil {
+			return LaunchResult{}, err
+		}
+		return LaunchResult{}, errors.New("runner: engine closed during startup")
+	}
 	e.sessions[sessionID] = active
 	e.mu.Unlock()
 
 	// Launch async reader loop for combined stdout and stderr
-	go e.superviseOutput(active, stdout, stderr)
+	go func() {
+		e.superviseOutput(active, stdout, stderr)
+		_ = cmd.Wait()
+		cancel()
+		close(active.reaped)
+	}()
 
 	// Turns this session puts in the inbox get their answers carried back in.
 	// Only embedded sessions: the runner enqueues their turns and owns their
@@ -292,6 +371,7 @@ func (e *Engine) launchEmbedded(
 	}
 
 	// Write the initial prompt
+	var writeErr error
 	if lifecycle == LifecycleACP || lifecycle == LifecycleJSONRPCStdio {
 		req := map[string]any{
 			"jsonrpc": "2.0",
@@ -302,9 +382,15 @@ func (e *Engine) launchEmbedded(
 			},
 		}
 		raw, _ := json.Marshal(req)
-		_, _ = stdin.Write(append(raw, '\n'))
+		_, writeErr = stdin.Write(append(raw, '\n'))
 	} else {
-		_, _ = stdin.Write([]byte(params.Prompt + "\n"))
+		_, writeErr = stdin.Write([]byte(params.Prompt + "\n"))
+	}
+	if writeErr != nil {
+		return LaunchResult{}, errors.Join(ctx.Err(), e.ctx.Err(), fmt.Errorf("runner: write initial prompt: %w", writeErr), e.Stop(sessionID))
+	}
+	if !stopStartup() || ctx.Err() != nil || e.ctx.Err() != nil {
+		return LaunchResult{}, errors.Join(ctx.Err(), e.ctx.Err(), e.Stop(sessionID))
 	}
 
 	return LaunchResult{
@@ -388,7 +474,11 @@ func (e *Engine) onSessionIdle(s *ActiveSession) {
 		req := enqueueRequest(s.ID, s.AgentID, s.AgentLabel, extracted, turnsCount)
 		// tangent.turns_enqueue takes the turn itself as its arguments, like
 		// every other enqueue tool, not a JSON string wrapped in a field.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		parent := e.ctx
+		if s.ctx != nil {
+			parent = s.ctx
+		}
+		ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 		defer cancel()
 		result, err := caller.CallTool(ctx, EnqueueTurnTool, req)
 		switch {
@@ -532,6 +622,12 @@ func (e *Engine) Health(ctx context.Context, sessionID string) (SessionHealthRes
 
 // Stop terminates an active session.
 func (e *Engine) Stop(sessionID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return e.stop(ctx, sessionID)
+}
+
+func (e *Engine) stop(ctx context.Context, sessionID string) error {
 	e.mu.RLock()
 	sess, ok := e.sessions[sessionID]
 	e.mu.RUnlock()
@@ -553,7 +649,42 @@ func (e *Engine) Stop(sessionID string) error {
 	if stdin != nil {
 		_ = stdin.Close()
 	}
+	if sess.reaped != nil {
+		select {
+		case <-sess.reaped:
+		case <-ctx.Done():
+			return fmt.Errorf("runner: reaping session %s: %w", sessionID, ctx.Err())
+		}
+	}
 	return nil
+}
+
+// Close irreversibly ends this engine's lifetime and stops its owned sessions.
+func (e *Engine) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	e.mu.Lock()
+	e.closed = true
+	e.cancel()
+	ids := make([]string, 0, len(e.sessions))
+	for id := range e.sessions {
+		ids = append(ids, id)
+	}
+	e.mu.Unlock()
+	started := make(chan struct{})
+	go func() { e.launches.Wait(); close(started) }()
+	var failures []error
+	select {
+	case <-started:
+	case <-ctx.Done():
+		failures = append(failures, fmt.Errorf("runner: waiting for startup shutdown: %w", ctx.Err()))
+	}
+	for _, id := range ids {
+		if err := e.stop(ctx, id); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // enqueueRequest is the tangent.turns_enqueue arguments for one extracted turn.
