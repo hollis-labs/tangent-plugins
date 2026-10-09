@@ -279,7 +279,7 @@ func TestUnknownDeliveryAndRefusalNeverAcknowledgeOrRepeatedlySend(t *testing.T)
 }
 
 func TestCapabilityAndShutdownGuardsPreservePending(t *testing.T) {
-	c, s, d, h, b, i := fixture(t)
+	c, _, d, h, b, i := fixture(t)
 	i.Resolution.Interrupt = true
 	d.interrupt = false
 	_, err := c.Advance(context.Background(), b, i, Choice{})
@@ -291,7 +291,7 @@ func TestCapabilityAndShutdownGuardsPreservePending(t *testing.T) {
 	if err != nil || len(d.sends) != 0 {
 		t.Fatal("capability refusal auto-reopened")
 	}
-	c, s, d, h, b, i = fixture(t)
+	c, s, d, h, b, i := fixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancel = cancel
 	_, err = c.Advance(ctx, b, i, Choice{})
