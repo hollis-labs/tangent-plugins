@@ -20,8 +20,8 @@ github.com/hollis-labs/go-tether-client v0.8.0 h1:20axAfaqixLnWs7n+DY0JqrUnOfHMy
 github.com/hollis-labs/go-tether-client v0.8.0/go.mod h1:xg8sxCZefI592F6m/0rO0w+td3Sz32PCycnolki9Qxk=
 github.com/hollis-labs/libs/plugin-mcp v0.1.1 h1:213HZTZaWL6KFkQeU3d2HZU9UMI+C0jxixHUtD4JFR0=
 github.com/hollis-labs/libs/plugin-mcp v0.1.1/go.mod h1:3x5ZVgHJewzwEpdl1RNFfxXXkq9SKVNL6LJVcpLCGnQ=
-github.com/hollis-labs/tangent v0.16.1-0.20261009050933-9d88652ea86e h1:Hafq5GHRxp7brR4o6LwuH4lV25RX4hTt/QWavn6sF6Y=
-github.com/hollis-labs/tangent v0.16.1-0.20261009050933-9d88652ea86e/go.mod h1:PND1xlmOWtNziBzGH+OFmSdIPH7ytEFWfJQDYoPXIHo=
+github.com/hollis-labs/tangent v0.17.0 h1:ZBviRiD/84rDq1QrboWPuyKg9+E91exoU74cVYNaGDc=
+github.com/hollis-labs/tangent v0.17.0/go.mod h1:PND1xlmOWtNziBzGH+OFmSdIPH7ytEFWfJQDYoPXIHo=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=
 github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
 github.com/modelcontextprotocol/go-sdk v1.8.0 h1:KIvahhYqwtbeniWVPs3TcXEA7b8jEtwfBpOTAI+Urx4=
