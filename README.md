@@ -20,13 +20,14 @@ schedule. Tangent's binary stays domain-free.
 | `runner` | `tangent.plugin.runner` | Supervises an agent process (or a Tether session) and carries its turns to Tangent's agent-turns inbox and the operator's answers back. |
 | `tesseract` | `tangent.plugin.tesseract` | A review board over Tesseract records: deprecate in place, hand promotions and rewords back to the agent. |
 | `torque` | `tangent.plugin.torque` | A board over Torque's task list; Sync pushes staged status moves back without an agent turn. |
+| `messaging` | `tangent.plugin.messaging` | Serial committed-channel intake with a private SQLite ledger, bounded stateless stages and immutable prepared Tangent publications. |
 
 Each plugin's README documents its tools. Tangent's
 [`docs/mcp-integration.md`](https://github.com/hollis-labs/tangent/blob/main/docs/mcp-integration.md) links the installed-plugin guides.
 
 ## Protocol-2 source integration
 
-All four modules use the SDK from the released
+The original four modules use the SDK from the released
 `github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1, use protocol 2 and acknowledge
 capability contract 1. Init and generated manifests report `0.2.0-dev` until
 the first protocol-2 release tag. They require a protocol-2 host with SDK
@@ -37,7 +38,9 @@ still observes caller cancellation; Stop and Unload cancel and reap owned
 embedded children within a finite cleanup budget. Delegated sessions remain
 owned by Tether.
 No installed-plugin version pin, existing release, installation or deployment
-changes here. The messaging plugin is not in this repository.
+changes here. The new [messaging module](messaging/README.md) uses the public
+1.1 turn contract for stage metadata and nonreplyable ordinary publications;
+its activation and reply delivery are separate work.
 
 `--manifest` emits canonical JSON (valid `plugin.yaml` content), including the
 native `bin/` entry and its SHA-256 artifact inventory. See
@@ -75,7 +78,7 @@ torque/                     module github.com/hollis-labs/tangent-plugins/torque
   cmd/tangent-plugin-torque/  entrypoint; `--manifest` prints its plugin.yaml
   internal/torque/            the plugin
   Makefile                    test / lint / build / dist
-github/, runner/, tesseract/         the same shape
+github/, runner/, tesseract/, messaging/  the same shape
 dist/tangent.plugin.<p>/    built, installable plugin directory (gitignored)
 ```
 
@@ -104,7 +107,7 @@ piece, so raise it against Tangent rather than reaching in. Tangent's
 [`docs/writing-a-plugin.md`](https://github.com/hollis-labs/tangent/blob/main/docs/writing-a-plugin.md)
 is the guide.
 
-Each `go.mod` requires the published Tangent v0.17.0 release and
+The original four `go.mod` files require the published Tangent v0.17.0 release and
 `libs/plugin-mcp` v0.1.1, with no `replace`. Their public handler types use the
 same SDK package. This replaces the temporary adoption-candidate dependency;
 module pins do not install a daemon or activate plugins. To develop against a

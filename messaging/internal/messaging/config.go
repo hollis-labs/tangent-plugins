@@ -110,8 +110,10 @@ func (c Config) Validate() error {
 	}
 	stage := c.Stages[0]
 	u, err := url.Parse(stage.EndpointURL)
-	validEndpoint:=err==nil&&(u.Scheme=="http"||u.Scheme=="https")&&u.Host!=""&&u.User==nil&&u.RawQuery==""&&u.Fragment==""&&strings.HasSuffix(u.Path,"/ai/chat")
-	if strings.HasPrefix(stage.EndpointURL,"unix:"){validEndpoint=filepath.IsAbs(strings.TrimPrefix(stage.EndpointURL,"unix:"))}
+	validEndpoint := err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
+	if strings.HasPrefix(stage.EndpointURL, "unix:") {
+		validEndpoint = filepath.IsAbs(strings.TrimPrefix(stage.EndpointURL, "unix:"))
+	}
 	if stage.ID != "summarize" || !identifier(stage.CallerID, 128) || !validEndpoint || stage.TimeoutMS < 0 || stage.TimeoutMS > 60000 {
 		return errors.New("messaging: invalid_builtin_stage")
 	}

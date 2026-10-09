@@ -114,15 +114,26 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 		p.Metadata[k] = v
 	}
 	p.OutputID = message.Metadata["output_id"]
+	p.AgentID, p.AgentIdentityKind = message.Metadata["logical_agent_id"], "logical_agent_id"
+	if p.AgentID == "" {
+		p.AgentID, p.AgentIdentityKind = p.SenderURN, "sender_urn"
+	}
+	if !identifier(p.AgentID, 256) {
+		return Publication{}, errors.New("messaging: agent_identity_refused")
+	}
 	classification := message.Metadata["kind"]
-	routed := classification != "" || message.Metadata["session_id"] != "" || message.Metadata["turn_id"] != ""
+	p.SessionID, p.TurnID = message.Metadata["session_id"], message.Metadata["turn_id"]
+	for _, label := range []string{p.SessionID, p.TurnID, p.OutputID} {
+		if label != "" && !identifier(label, 256) {
+			return Publication{}, errors.New("messaging: source_label_refused")
+		}
+	}
+	routed := classification != ""
 	if !routed {
 		p.Origin, p.Kind = "publication", "checkpoint"
-		p.AgentID, p.AgentIdentityKind = p.SenderURN, "sender_urn"
 		return p, nil
 	}
 	p.Origin = "routed"
-	p.SessionID, p.TurnID = message.Metadata["session_id"], message.Metadata["turn_id"]
 	if !identifier(p.SessionID, 256) || !identifier(p.TurnID, 256) || message.Kind != gomsg.MsgKindNotice || p.SenderURN != "msg://session/local/"+p.SessionID || message.ThreadID != p.SessionID {
 		return Publication{}, errors.New("messaging: routed_attribution_refused")
 	}
@@ -133,10 +144,6 @@ func Admit(source Source, message tether.ChannelMessage) (Publication, error) {
 		p.Kind = classification
 	default:
 		return Publication{}, errors.New("messaging: routed_kind_refused")
-	}
-	p.AgentID, p.AgentIdentityKind = message.Metadata["logical_agent_id"], "logical_agent_id"
-	if p.AgentID == "" {
-		p.AgentID, p.AgentIdentityKind = p.SenderURN, "sender_urn"
 	}
 	return p, nil
 }

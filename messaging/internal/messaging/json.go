@@ -10,7 +10,11 @@ import (
 
 // strictJSON rejects duplicate keys and invalid Unicode before Go's JSON
 // decoder can replace a lone surrogate or select a last-wins field value.
-func strictJSON(raw []byte) bool {
+func strictJSON(raw []byte) bool { return StrictJSON(raw) }
+
+// StrictJSON is shared with the owned sink adapter to refuse ambiguous saved
+// request and receipt bytes before any external effect or cursor settlement.
+func StrictJSON(raw []byte) bool {
 	if !utf8.Valid(raw) || !validEscapes(raw) {
 		return false
 	}

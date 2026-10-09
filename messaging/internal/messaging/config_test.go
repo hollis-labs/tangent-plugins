@@ -34,7 +34,7 @@ func TestConfigExplicitInputsAndBounds(t *testing.T) {
 		"unbounded history":         func(c *Config) { c.HistoryLimit = 1001 },
 		"no stages":                 func(c *Config) { c.Stages = nil },
 		"unknown stage":             func(c *Config) { c.Stages[0].ID = "execute-agent" },
-		"unknown ai endpoint":       func(c *Config) { c.Stages[0].EndpointURL = "http://fixture.test/tools" },
+		"invalid ai endpoint":       func(c *Config) { c.Stages[0].EndpointURL = "ftp://fixture.test" },
 		"unbounded ai":              func(c *Config) { c.Stages[0].TimeoutMS = 60001 },
 		"ambient instructions":      func(c *Config) { c.Stages[0].InstructionPath = "~/.instruction" },
 	} {
