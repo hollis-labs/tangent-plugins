@@ -4,7 +4,7 @@
 #
 # Adding a plugin means adding its directory name here and nothing else.
 
-PLUGINS := github runner tesseract torque
+PLUGINS := github runner tesseract torque messaging
 
 .PHONY: all test lint dist clean
 
