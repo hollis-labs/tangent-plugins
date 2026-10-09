@@ -6,7 +6,7 @@ First-party plugins for [Tangent](https://github.com/hollis-labs/tangent).
 > not a pitch for what's planned. Interfaces and behavior change without notice.
 
 A plugin is its own program. Tangent spawns it as a subprocess and talks to it
-over the [plugin-sdk](https://github.com/hollis-labs/plugin-sdk) subprocess
+over the [plugin-sdk](https://github.com/hollis-labs/libs/tree/main/plugin-mcp/plugin-sdk) subprocess
 wire; the plugin contributes MCP tools and browser routes, and calls back into
 Tangent as an ordinary local MCP client. Plugins live here, not in Tangent,
 because each carries its own application's dependency and ships on its own
@@ -26,12 +26,12 @@ Each plugin's README documents its tools. Tangent's
 
 ## Protocol-2 source integration
 
-All four modules pin plugin-sdk to
-`v0.6.2-0.20261003211221-5934f3aed260`, use protocol 2 and acknowledge
+All four modules use the SDK from the released
+`github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1, use protocol 2 and acknowledge
 capability contract 1. Init and generated manifests report `0.2.0-dev` until
 the first protocol-2 release tag. They require a protocol-2 host with SDK
-manifest-v2 support; legacy Tangent cannot load these bundles. Replace the
-temporary SDK pin with the approved `plugin-mcp/v0.1.0` release before activation.
+manifest-v2 support; legacy Tangent cannot load these bundles. The SDK accepts finite forward-call `context` budgets, including Init, and
+retains strict decoding and cancellation handling.
 No installed-plugin version pin, existing release, installation or deployment
 changes here. The messaging plugin is not in this repository.
 
@@ -90,8 +90,8 @@ A plugin uses public Tangent surfaces and SDK subprocess/manifest packages:
 ```go
 tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"            // surfaces, participant capability, ToolCaller
               "github.com/hollis-labs/tangent/pkg/plugin/hostclient" // Tangent's tool surface over MCP
-              "github.com/hollis-labs/plugin-sdk/subprocess"         // the wire
-              "github.com/hollis-labs/plugin-sdk/manifest"           // declarations
+              "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"         // the wire
+              "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"           // declarations
 ```
 
 Never anything under `tangent/internal/`. Go refuses it from another module
@@ -100,9 +100,12 @@ piece, so raise it against Tangent rather than reaching in. Tangent's
 [`docs/writing-a-plugin.md`](https://github.com/hollis-labs/tangent/blob/main/docs/writing-a-plugin.md)
 is the guide.
 
-Each `go.mod` requires a released `github.com/hollis-labs/tangent` and carries no
-`replace`. To develop a plugin against a local Tangent checkout, use a Go
-workspace, which is gitignored here:
+For this source compatibility migration, each `go.mod` requires the published
+Tangent adoption candidate `9d88652ea86eb2023bc9dfe9eec999c2a8f7ae72` via its
+Go pseudo-version, with no `replace`. That candidate supplies public handler
+types from the same released SDK. It is not a Tangent release pin; the final
+pin follows Tangent's green landing and release. To develop against a local
+Tangent checkout, use a Go workspace, which is gitignored here:
 
 ```bash
 go work init ./torque ../tangent   # adjust the path to your checkout
