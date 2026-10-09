@@ -16,8 +16,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/hollis-labs/go-messaging v0.7.0 h1:VDvodrSgeYbH3ElwoTXWU7VjsPjUeHgXke4ADKLbzZI=
 github.com/hollis-labs/go-messaging v0.7.0/go.mod h1:KLv+81DP4Zktb4/ZnCg5dlzxjaI3u9jAm/tWOZxqHq0=
-github.com/hollis-labs/go-tether-client v0.8.0 h1:20axAfaqixLnWs7n+DY0JqrUnOfHMyt4KxRRzWau5e0=
-github.com/hollis-labs/go-tether-client v0.8.0/go.mod h1:xg8sxCZefI592F6m/0rO0w+td3Sz32PCycnolki9Qxk=
+github.com/hollis-labs/go-tether-client v0.10.0 h1:2v7OBXzuZclStOo563bw57eFwl2szmR4LeBczHjL+hU=
+github.com/hollis-labs/go-tether-client v0.10.0/go.mod h1:xg8sxCZefI592F6m/0rO0w+td3Sz32PCycnolki9Qxk=
 github.com/hollis-labs/libs/plugin-mcp v0.1.1 h1:213HZTZaWL6KFkQeU3d2HZU9UMI+C0jxixHUtD4JFR0=
 github.com/hollis-labs/libs/plugin-mcp v0.1.1/go.mod h1:3x5ZVgHJewzwEpdl1RNFfxXXkq9SKVNL6LJVcpLCGnQ=
 github.com/hollis-labs/tangent v0.17.0 h1:ZBviRiD/84rDq1QrboWPuyKg9+E91exoU74cVYNaGDc=
