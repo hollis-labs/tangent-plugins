@@ -28,7 +28,7 @@ func (h ToolHost) Await(ctx context.Context, sessionID string) ([]ResolvedItem, 
 		WaitStatus string         `json:"wait_status"`
 		Replies    []ResolvedItem `json:"replies"`
 	}
-	if json.Unmarshal(result.Content, &response) != nil || response.SessionID != sessionID || len(response.Replies) > 128 ||
+	if json.Unmarshal(result.Content, &response) != nil || response.SessionID != sessionID ||
 		(response.WaitStatus != "replies" && response.WaitStatus != "timeout") || (response.WaitStatus == "timeout" && len(response.Replies) != 0) {
 		return nil, ErrRefused
 	}
