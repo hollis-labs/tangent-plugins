@@ -63,13 +63,31 @@ func readConfiguration(path string) (messaging.Config, error) {
 	return config, errors.Join(readErr, file.Close(), root.Close())
 }
 
+// configurationInputs treats a provided host configuration as the complete
+// input. Standalone environment mode is available only when Config is empty.
+func configurationInputs(config map[string]string) (string, string, error) {
+	if len(config) == 0 {
+		return os.Getenv(configEnv), os.Getenv("TETHER_TOKEN"), nil
+	}
+	for key := range config {
+		if key != "configuration_path" && key != "tether_token" {
+			return "", "", errors.New("messaging: host_configuration_refused")
+		}
+	}
+	path := config["configuration_path"]
+	if !filepath.IsAbs(path) {
+		return "", "", errors.New("messaging: explicit_configuration_path_required")
+	}
+	return path, config["tether_token"], nil
+}
+
 func (s *served) Init(ctx context.Context, params subprocess.InitParams) (subprocess.InitResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ledger != nil {
 		return subprocess.InitResult{}, errors.New("messaging: already_initialized")
 	}
-	config, err := readConfiguration(os.Getenv(configEnv))
+	config, token, err := resolveConfiguration(params.Config)
 	if err != nil {
 		return subprocess.InitResult{}, err
 	}
@@ -77,11 +95,11 @@ func (s *served) Init(ctx context.Context, params subprocess.InitParams) (subpro
 	if err != nil {
 		return subprocess.InitResult{}, err
 	}
-	source, closeSource, err := messaging.NewSource(config, os.Getenv("TETHER_TOKEN"))
+	source, closeSource, err := messaging.NewSource(config, token)
 	if err != nil {
 		return subprocess.InitResult{}, errors.Join(err, ledger.Close())
 	}
-	specs, closeStages, err := messaging.BuildStages(config, os.Getenv("TETHER_TOKEN"))
+	specs, closeStages, err := messaging.BuildStages(config, token)
 	if err != nil {
 		closeSource()
 		return subprocess.InitResult{}, errors.Join(err, ledger.Close())

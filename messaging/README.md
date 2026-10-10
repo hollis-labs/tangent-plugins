@@ -17,12 +17,30 @@ before-1.0/rollout work.
 
 ## Explicit configuration
 
-Set `TANGENT_MESSAGING_CONFIG` to an absolute JSON file. Tangent's public host
-client separately requires `TANGENT_MCP_URL`. `TETHER_TOKEN` is an explicit
-optional transport credential; an empty choice does not search a home directory.
-None of these is delivered through `Init.Config` or stored by the host on this
-plugin's behalf. Manifest environment names declare inputs, not inheritance
-permission or grants.
+Host-managed initialization uses manifest settings from `Init.Config`.
+Choose `configuration_mode=file` with only an absolute `configuration_path`,
+or `configuration_mode=settings` with explicit `endpoint_ref`, `tether_address`,
+`caller_urn`, `channels_json`, `stages_json`, `request_timeout_ms`,
+`reconnect_min_ms`, `reconnect_max_ms`, and `history_limit`. The lists are JSON
+strings decoded and validated by this plugin, never by the host. Optional
+`instruction_path` selects the summarizer document; supplying it together with
+a stage's `instruction_path` refuses ambiguity. The single builtin stage and
+all original identity/finite-bound constraints still apply. File mode refuses
+settings-mode fields, and settings mode refuses a file path. Conditional
+requirements are checked before the plugin acquires its ledger or calls services.
+
+`tether_token` is a separate write-only host secret passed only at runtime.
+Omitting it in a supplied host configuration means an empty token; it never
+falls back to the environment. The host client separately requires its explicit
+`TANGENT_MCP_URL` endpoint. No setting grants capabilities or enables a plugin.
+
+Only an entirely empty `Init.Config` selects standalone mode: set
+`TANGENT_MESSAGING_CONFIG` to an absolute JSON file and optionally `TETHER_TOKEN`.
+A legacy supplied `configuration_path` without a mode remains explicit file
+mode. Partial or unknown supplied settings refuse rather than using ambient
+inputs. Manifest environment names declare inputs, not inheritance permission.
+The following is the file-mode document (settings mode carries the same typed
+values through the declared scalar fields):
 
 ```json
 {

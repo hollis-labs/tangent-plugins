@@ -32,6 +32,9 @@ func TestProtocolFixtureProcess(t *testing.T) {
 func TestProtocolLoadAndUnloadJoinSubscriptionAndReap(t *testing.T) {
 	entered, joined := make(chan struct{}), make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer owned-host-fixture" {
+			t.Error("runtime host token not used")
+		}
 		switch r.URL.Path {
 		case "/channels/owner-inbox/messages":
 			w.Header().Set("Content-Type", "application/json")
@@ -57,7 +60,9 @@ func TestProtocolLoadAndUnloadJoinSubscriptionAndReap(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	path, dataDir := fixtureConfiguration(t, server.URL)
+	_, dataDir := fixtureConfiguration(t, server.URL)
+	inputs := settingsFixture(server.URL)
+	inputs["tether_token"] = "owned-host-fixture"
 	cacheDir := t.TempDir()
 	executable, err := os.Executable()
 	if err != nil {
@@ -65,7 +70,7 @@ func TestProtocolLoadAndUnloadJoinSubscriptionAndReap(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	process, err := pluginhost.Start(ctx, pluginhost.Spec{ID: pluginID, ExpectedID: pluginID, ExpectedVersion: pluginVersion, Command: executable, Args: []string{"-test.run=^TestProtocolFixtureProcess$"}, Env: []string{"MESSAGING_PROTOCOL_FIXTURE=1", configEnv + "=" + path, "TANGENT_MCP_URL=" + server.URL}, Init: subprocess.InitParams{PluginDir: filepath.Dir(executable), DataDir: dataDir, CacheDir: cacheDir, Config: map[string]string{}, CapabilityContract: capability.ContractVersion, Incarnation: capability.RuntimeIdentity{HostInstance: "synthetic-messaging-host", OwnerID: pluginID, OwnerGeneration: 1}, Grants: capability.GrantSet{}, HostInfo: subprocess.HostInfo{Version: "1.0.0", Protocol: 2}}, HandshakeTimeout: 10 * time.Second, UnloadTimeout: 5 * time.Second, ReapTimeout: 2 * time.Second})
+	process, err := pluginhost.Start(ctx, pluginhost.Spec{ID: pluginID, ExpectedID: pluginID, ExpectedVersion: pluginVersion, Command: executable, Args: []string{"-test.run=^TestProtocolFixtureProcess$"}, Env: []string{"MESSAGING_PROTOCOL_FIXTURE=1", configEnv + "=invalid-ambient", "TANGENT_MCP_URL=" + server.URL}, Init: subprocess.InitParams{PluginDir: filepath.Dir(executable), DataDir: dataDir, CacheDir: cacheDir, Config: inputs, CapabilityContract: capability.ContractVersion, Incarnation: capability.RuntimeIdentity{HostInstance: "synthetic-messaging-host", OwnerID: pluginID, OwnerGeneration: 1}, Grants: capability.GrantSet{}, HostInfo: subprocess.HostInfo{Version: "1.0.0", Protocol: 2}}, HandshakeTimeout: 10 * time.Second, UnloadTimeout: 5 * time.Second, ReapTimeout: 2 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

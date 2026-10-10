@@ -57,7 +57,25 @@ func emitManifest(out io.Writer) error {
 		Hosts:  map[string]sdkmanifest.HostRange{"tangent": {Min: "1.0.0", Max: "1.99.99"}},
 		Server: sdkmanifest.Server{Runtime: "binary", Entry: entry, Engines: map[string]sdkmanifest.HostRange{"binary": {Min: "1.0.0", Max: "1.99.99"}}}, Artifact: artifact,
 		Capabilities: []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Enqueue publications and await/acknowledge actual resolved replies through public Tangent tools", Metadata: json.RawMessage(`{"tools":["tangent.turns_enqueue","tangent.turn_await","tangent.turn_ack"]}`)}},
-		Config:       sdkmanifest.Config{Fields: map[string]sdkmanifest.Field{"configuration_path": {Type: "string", Label: "Explicit non-secret messaging JSON configuration", Required: true, Env: configEnv}}, Secrets: map[string]sdkmanifest.Secret{"tether_token": {Label: "Explicit Tether token if required by the configured endpoints", Env: "TETHER_TOKEN"}}},
+		Config:       sdkmanifest.Config{Fields: configurationFields(), Secrets: map[string]sdkmanifest.Secret{"tether_token": {Label: "Explicit Tether token if required by the configured endpoints", Env: "TETHER_TOKEN"}}},
 		Tangent:      extension,
 	})
+}
+
+// Fields stay flat; serialized list content is interpreted only by the plugin.
+func configurationFields() map[string]sdkmanifest.Field {
+	return map[string]sdkmanifest.Field{
+		"configuration_mode": {Type: "select", Label: "Configuration mode", Required: true, Options: []string{"file", "settings"}},
+		"configuration_path": {Type: "string", Label: "File mode: absolute non-secret JSON path", Env: configEnv},
+		"endpoint_ref":       {Type: "string", Label: "Settings mode: source endpoint identity"},
+		"tether_address":     {Type: "string", Label: "Settings mode: explicit Tether address"},
+		"caller_urn":         {Type: "string", Label: "Settings mode: actual caller URN"},
+		"channels_json":      {Type: "string", Label: "Settings mode: channels (JSON string array)"},
+		"stages_json":        {Type: "string", Label: "Settings mode: stage list (JSON array)"},
+		"instruction_path":   {Type: "string", Label: "Settings mode: absolute summarizer instruction document"},
+		"request_timeout_ms": {Type: "integer", Label: "Settings mode: request timeout (ms)"},
+		"reconnect_min_ms":   {Type: "integer", Label: "Settings mode: minimum reconnect delay (ms)"},
+		"reconnect_max_ms":   {Type: "integer", Label: "Settings mode: maximum reconnect delay (ms)"},
+		"history_limit":      {Type: "integer", Label: "Settings mode: history page limit"},
+	}
 }
