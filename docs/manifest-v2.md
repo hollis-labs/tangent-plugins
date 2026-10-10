@@ -97,7 +97,10 @@ The chat-agent guide includes the existing host documentation gate's
 adopting the bundle in a future source-smoke/release roster update; the host
 includes such manuals only when their declared tool actually ships.
 
-The existing host's unknown-ID default is enabled. A reviewed public default-off
-install contract is still required before claiming opt-in installation acceptance;
-a manifest cannot override that host policy. Source-only packaged lifecycle tests
-use test-owned host/data and do not install or enable live plugins.
+The chat-agent source-only host pin `380db1fa961c` defaults unknown installed IDs
+to disabled. Its public install/enable and participant management contracts own
+opt-in intent; ordinary upgrades preserve saved booleans. A manifest cannot
+override that host policy. Packaged lifecycle fixtures verify disabled install,
+restart and explicit enable with test-owned host/data. Rendered browser settings
+form acceptance remains unresolved; these fixtures exercise settings schema/API
+contracts and do not install or enable live plugins.

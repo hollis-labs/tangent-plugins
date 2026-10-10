@@ -1,6 +1,4 @@
 github.com/hollis-labs/libs/plugin-mcp v0.1.1 h1:213HZTZaWL6KFkQeU3d2HZU9UMI+C0jxixHUtD4JFR0=
 github.com/hollis-labs/libs/plugin-mcp v0.1.1/go.mod h1:3x5ZVgHJewzwEpdl1RNFfxXXkq9SKVNL6LJVcpLCGnQ=
-github.com/hollis-labs/tangent v0.19.0 h1:nMSQtGibstihAzQDXlkJfTwfcZh+5x8M6iRf22yqiH8=
-github.com/hollis-labs/tangent v0.19.0/go.mod h1:PND1xlmOWtNziBzGH+OFmSdIPH7ytEFWfJQDYoPXIHo=
-github.com/hollis-labs/tangent v0.19.1-0.20261010060936-72a5ea7176ca h1:9qhrW5H0K7u8qJOxJK9+0Q7ydTaQEl+R3iFVDqXnHxM=
-github.com/hollis-labs/tangent v0.19.1-0.20261010060936-72a5ea7176ca/go.mod h1:TbV7ycI73VVG+6OLY/RsfTjmF++cWYUJKuvAULQVSnY=
+github.com/hollis-labs/tangent v0.19.1-0.20261010073346-380db1fa961c h1:E6CuM8KzKLJdpwi6OzKtMmQ57wliEL+2AjzZIyPE7I4=
+github.com/hollis-labs/tangent v0.19.1-0.20261010073346-380db1fa961c/go.mod h1:mB7rqCmKNc8xn9pxg7oRR1GnLrj82IwRUxBc0ADC2lI=
