@@ -33,3 +33,9 @@ dist:
 
 clean:
 	rm -rf dist
+
+# Source verification only. This never uses the operator's installed plugins,
+# channel routes, provider credentials, or running Tangent database.
+.PHONY: smoke
+smoke:
+	$(MAKE) -C messaging smoke-stage1
