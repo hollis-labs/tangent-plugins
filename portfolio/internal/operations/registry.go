@@ -24,10 +24,17 @@ func init() {
 	decode(legacySeedsJSON, &legacySeeds)
 	registry = map[string]Operation{}
 	for _, op := range declarations {
+		op.baseInput = clone(op.Input).(object)
+		op.Input = clone(composeInput(op)).(object)
+		requiredStrings(op.Input)
 		op.handler = handlerFor(op.Name)
 		registry[op.Name] = op
 		declarationOrder = append(declarationOrder, op.Name)
 	}
+	op := batchDeclaration()
+	requiredStrings(op.Input)
+	registry[op.Name] = op
+	declarationOrder = append(declarationOrder, op.Name)
 }
 
 // Registry returns detached metadata in authored declaration order. Callers
@@ -38,6 +45,7 @@ func Registry() []Operation {
 		op := registry[name]
 		op.Input = clone(op.Input).(object)
 		op.handler = nil
+		op.baseInput = nil
 		out = append(out, op)
 	}
 	return out

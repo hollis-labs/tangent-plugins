@@ -32,6 +32,22 @@ func validate(schema object, value any, root object, path string) []problem {
 		}
 		return out
 	}
+	for _, keyword := range []string{"oneOf", "anyOf"} {
+		if alternatives, ok := schema[keyword].([]any); ok {
+			matches := 0
+			for _, alternative := range alternatives {
+				if len(validate(alternative.(object), value, root, path)) == 0 {
+					matches++
+				}
+			}
+			if matches == 0 || keyword == "oneOf" && matches != 1 {
+				add("must match " + keyword + " alternatives")
+			}
+		}
+	}
+	if denied, ok := schema["not"].(object); ok && len(validate(denied, value, root, path)) == 0 {
+		add("field is not allowed")
+	}
 	if v, exists := schema["const"]; exists && !reflect.DeepEqual(value, v) {
 		add("must be " + jsonText(v))
 	}
@@ -59,10 +75,24 @@ func validate(schema object, value any, root object, path string) []problem {
 		}
 	}
 	if list, ok := value.([]any); ok {
+		if lowerBound, ok := number(schema["minItems"]); ok && float64(len(list)) < lowerBound {
+			add("too few entries")
+		}
+		if upperBound, ok := number(schema["maxItems"]); ok && float64(len(list)) > upperBound {
+			add("too many entries")
+		}
 		if rule, has := schema["items"].(object); has {
 			for i, v := range list {
 				out = append(out, validate(rule, v, root, fmt.Sprintf("%s[%d]", path, i))...)
 			}
+		}
+	}
+	if text, ok := value.(string); ok {
+		if lowerBound, ok := number(schema["minLength"]); ok && float64(len([]rune(text))) < lowerBound {
+			add("string too short")
+		}
+		if upperBound, ok := number(schema["maxLength"]); ok && float64(len([]rune(text))) > upperBound {
+			add("string too long")
 		}
 	}
 	if m, ok := value.(object); ok {

@@ -6,6 +6,7 @@ import (
 
 	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent-plugins/portfolio/internal/httpapi"
+	"github.com/hollis-labs/tangent-plugins/portfolio/internal/mcpapi"
 	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
@@ -30,8 +31,12 @@ func emitManifest(out io.Writer) error {
 	for _, route := range httpapi.Routes() {
 		bindings.Routes = append(bindings.Routes, route.Declaration)
 	}
-	// No MCP tools, UI, secrets, callbacks or administrative migrate exposure.
+	tools := mcpapi.Tools()
+	for _, tool := range tools {
+		bindings.MCPTools = append(bindings.MCPTools, tool.Name)
+	}
+	// No UI, secrets, callbacks or administrative migrate exposure.
 	return plugin.EncodeNativeManifest(out, payload, "bin/tangent-plugin-portfolio", sdkmanifest.Manifest{
-		ID: pluginID, Name: pluginName, Version: pluginVersion, Description: pluginDescription,
+		ID: pluginID, Name: pluginName, Version: pluginVersion, Description: pluginDescription, Tools: tools,
 	}, bindings)
 }

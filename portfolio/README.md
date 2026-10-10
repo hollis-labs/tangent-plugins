@@ -1,10 +1,10 @@
 # Portfolio shadow storage, relationships and Projects
 
 This module implements CW-20261009-0096, CW-20261009-0099, CW-20261009-0100,
-CW-20261009-0101 and the bounded source adapter in CW-20261009-0103 /
+CW-20261009-0101 and the bounded source adapters in CW-20261009-0103/0104 /
 accepted ADR0015 (DEC067). It is a
 shadow storage and copied-snapshot evaluation tool. Node ptrack remains the
-single authoritative writer. The default-refusing HTTP executable described
+single authoritative writer. The default-refusing HTTP/MCP executable described
 below is a source artifact. There is no installed plugin, authenticated production
 writer, live synchronization, UI or writer switch here. Read-only Projects clients and
 internal shadow sync/view methods are source-only and have no installed carrier.
@@ -121,8 +121,8 @@ DataDir lifecycle remain obligations before installed writer adoption.
 `make check` runs lint, race fixtures and no-cgo build. Tests use synthetic
 private roots; explicit copied-data parity runs are acceptance artifacts rather
 than tests against a mutable operator dataset. Production caller handoff0067, real upstream integrations, host UI0064, CLI migration
-and owner-approved cutover remain later slices. The source registry has29
-operations; its internal shadow registry is described below.
+and owner-approved cutover remain later slices. The source registry defines the
+internal shadow operations described below.
 
 ## Read-only Projects (0101)
 
@@ -235,8 +235,9 @@ operation declarations: names, descriptions, input schemas, write metadata and
 one domain dispatcher. `Registry` returns detached metadata and `Service.Call`
 uses those same declarations for input validation. This package is internal;
 0103 adds a source-only HTTP adapter over it with explicit shadow/verifier
-injection for tests and default refusal in the executable. No registry CLI,
-MCP, installed plugin, live client or authoritative writer exposes it. The
+injection for tests and default refusal in the executable. 0104 adds source MCP
+declarations and a test-owned admission adapter. No registry CLI,
+installed plugin, live client or authoritative writer exposes it. The
 existing storage CLI retains its copied-snapshot commands.
 
 Local behavior covers discovery/schema/contract, ordered/filterable lists,
@@ -357,7 +358,7 @@ Every path starts with `/api/plugins/portfolio/operations/`:
 
 `migrate` remains internal administrative compatibility behavior with no HTTP
 grant. Typed Projects/relationship methods are not new registry routes in this
-slice. No MCP bindings or UI assets are declared. The root install/build roster
+slice. Source MCP bindings are declared by 0104; no UI assets are declared. The root install/build roster
 is unchanged; this module is an explicitly built source artifact.
 
 Send `Content-Type: application/json` (optional media parameters), one JSON object
@@ -432,13 +433,14 @@ not provision Architect/Planner identities, and does not couple write authority
 to SQLite commits. Local participant/caller labels remain unauthenticated for
 portfolio authority. Production carrier integration and caller provisioning
 are dependencies; no host patch, installed/live acceptance, legacy transport
-parity, pagination/scope overhaul, writer cutover or remote writes are included.
+parity, query-scope algorithm, writer cutover or remote writes are included.
 
 Existing typed `torque_tasks` paging and bounded `torque_titles` batch inputs
 pass through the registry to an injected upstream unchanged, preserving
 has_more/next_cursor/estimated-total or missing-ID evidence. This adapter does
-not fetch another page, claim complete upstream totals, add local pagination,
-or compose a batch of mutations. Real Torque networking/board integration
+not fetch another upstream page or claim complete upstream totals. The shared
+0104 service adds optional bounded local pagination and atomic internal batches.
+Real Torque networking/board integration
 remains 0102; Node stays the authoritative writer.
 
 Fixtures exercise each operation route, schema/root and method errors, grants
@@ -450,3 +452,46 @@ uses the actual public host decoder/artifact verifier; an injected-stream SDK
 JSON-RPC fixture exercises the default-refusing lifecycle. Neither is a deployed
 host/issuer or real origin acceptance run. `make check` runs module lint, race
 tests and no-cgo build, including the existing copied-snapshot checks.
+
+## 0104 source MCP declarations and shared contracts
+
+The native manifest now derives portfolio MCP tools and effects from the shared
+operation registry. Its executable still opens no store or secrets and refuses
+all callers. The injected source adapter checks request-local current authority
+before access, after writer waits and before result/error disclosure. The
+test-owned public SDK transcript performs list/get/comment/decide on generated
+data with synthetic verified read/write/decide/resource grants, preserves imported
+historical authors and uses verifier-owned new principals. It is not live host
+or issuer acceptance.
+
+Shared per-database schemas enforce create fields, patch types/null removal and
+typed filters. Unknown fields and exact internal json.Number values remain
+preserved. Optional local list/search pages bind their continuation to the
+complete selected ordered cohort and query; unrelated databases do not alter the
+token. Shared batch handlers run sequentially inside one transaction with
+current stable principal/resource admission, sequential rev CAS, detached results,
+precommit output bounds and complete precommit rollback. Batch has no new HTTP
+route. Postcommit authority refusal can follow committed effects and supplies no
+rollback or safe retry guarantee.
+
+The public SDK/host map argument decoder rounds numbers before the handler.
+Every nested MCP write number, including CAS and batch entries, is refused as
+`invalid` when its decoded absolute value is at least 2^53. The boundary must
+also refuse because unsafe odd integers can already round down to it. Structured
+writes use the conservative strictly-inside integer range; decimal/exponent
+numeric tokens can still normalize or round. Real SDK serialized positive/
+negative unsafe odd integers, boundary values, nested objects/arrays, CAS and
+whole-batch unchanged-on-refusal controls exercise this limit, alongside safe
+numeric and create/update/inbox add/promotion/batch controls. No JSON-text field
+or SDK/host patch is installed. Direct subprocess strict JSON admission rejects
+ambiguous payloads; duplicate keys may already be lost on the upstream host map
+path. Internal exact-number checks are not general public-wire losslessness.
+The bounded contract follows PM01a1265f-2739 / manager decision15968 on
+CW-20261009-0104; raw-number host/SDK carrier follow-up is CW-20261010-0197
+(manual backlog), with production authority still unavailable.
+
+The [staged host manual](docs/host-manual.md) documents the declared tools and
+bounded contracts. The actual pinned host gate conditionally selects
+`docs/plugins/*.md` manuals by a required-tool header. This staged source file
+does not adopt the manual or installation pin into that host; no host docs-gate
+passing claim is made. Portfolio remains outside the root install/build roster.

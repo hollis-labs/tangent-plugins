@@ -28,8 +28,13 @@ func TestNativeManifestPayloadAndRouteContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != pluginID || m.UI != nil || len(m.Hooks) != 0 || len(m.Tools) != 0 || len(m.Bindings.MCPTools) != 0 || len(m.Capabilities) != 0 {
+	if m.ID != pluginID || m.UI != nil || len(m.Hooks) != 0 || len(m.Capabilities) != 0 {
 		t.Fatal("unexpected surface", m)
+	}
+	for _, tool := range m.Tools {
+		if tool.Name == "tangent.portfolio_migrate" {
+			t.Fatal("administrative MCP exposure")
+		}
 	}
 	if err = m.CheckCompatibility(sdkmanifest.Compatibility{Hosts: map[string]string{"tangent": "1.0.0"}, Engines: map[string]string{"binary": "1.0.0"}}); err != nil {
 		t.Fatal(err)
@@ -113,8 +118,11 @@ func TestDefaultLifecycleNeverOpensDataOrAdmitsCallers(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatal("default executable wrote data", entries, err)
 	}
-	if _, ok := any(s).(subprocess.MCPHandler); ok {
-		t.Fatal("0104 MCP exposure")
+	for _, name := range []string{"tangent.portfolio_get", "tangent.portfolio_comment", "tangent.portfolio_decide", "tangent.portfolio_batch"} {
+		result, callErr := s.MCPCallTool(t.Context(), subprocess.MCPCallRequest{ToolName: name, Arguments: map[string]any{}, Identity: json.RawMessage(`{"principal":"owner","verified":true}`)})
+		if callErr != nil || !result.IsError || !bytes.Contains(result.Content, []byte("verified caller authority unavailable")) {
+			t.Fatal("default MCP admitted caller", result, callErr)
+		}
 	}
 	if err = s.Unload(t.Context()); err != nil {
 		t.Fatal(err)
