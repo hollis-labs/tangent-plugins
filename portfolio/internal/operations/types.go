@@ -54,11 +54,12 @@ type Upstream interface {
 
 // Service evaluates local domain operations on one explicitly selected shadow.
 type Service struct {
-	Store  *storage.Store
-	Verify VerifyCaller
-	Admit  AdmitRequest
-	Torque Upstream
-	Now    func() time.Time
+	Store      *storage.Store
+	Verify     VerifyCaller
+	Admit      AdmitRequest
+	AdmitEdges AdmitEdges
+	Torque     Upstream
+	Now        func() time.Time
 }
 
 // Operation is the single domain declaration used for validation and dispatch.
@@ -148,6 +149,9 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 	}
 	if name == "batch" {
 		return s.callBatch(ctx, caller, in)
+	}
+	if edgeOperation(name) {
+		return s.callEdge(ctx, caller, op, in)
 	}
 	x := &execution{service: s, ctx: ctx, now: s.clock().Truncate(time.Millisecond)}
 	if op.Write && s.Verify == nil && s.Admit == nil {

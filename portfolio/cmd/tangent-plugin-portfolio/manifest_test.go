@@ -118,7 +118,7 @@ func TestDefaultLifecycleNeverOpensDataOrAdmitsCallers(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatal("default executable wrote data", entries, err)
 	}
-	for _, name := range []string{"tangent.portfolio_get", "tangent.portfolio_comment", "tangent.portfolio_decide", "tangent.portfolio_batch"} {
+	for _, name := range []string{"tangent.portfolio_get", "tangent.portfolio_comment", "tangent.portfolio_decide", "tangent.portfolio_batch", "tangent.portfolio_edge_list", "tangent.portfolio_edge_add", "tangent.portfolio_edge_remove", "tangent.portfolio_edge_backlinks", "tangent.portfolio_decision_gates"} {
 		result, callErr := s.MCPCallTool(t.Context(), subprocess.MCPCallRequest{ToolName: name, Arguments: map[string]any{}, Identity: json.RawMessage(`{"principal":"owner","verified":true}`)})
 		if callErr != nil || !result.IsError || !bytes.Contains(result.Content, []byte("verified caller authority unavailable")) {
 			t.Fatal("default MCP admitted caller", result, callErr)
