@@ -4,7 +4,7 @@
 #
 # Adding a plugin means adding its directory name here and nothing else.
 
-PLUGINS := github runner tesseract torque messaging
+PLUGINS := github runner tesseract torque messaging chat-agent
 
 .PHONY: all test lint dist clean
 
@@ -39,3 +39,4 @@ clean:
 .PHONY: smoke
 smoke:
 	$(MAKE) -C messaging smoke-stage1
+	$(MAKE) -C chat-agent smoke

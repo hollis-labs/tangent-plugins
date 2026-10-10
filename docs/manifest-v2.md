@@ -76,7 +76,28 @@ regular payload files. `plugin.yaml` is excluded from the artifact digest.
 Review must pin the manifest separately along with identity/version, payload
 digest and grants; hosts verify the immutable reviewed bundle before launch.
 
-The SDK remains pinned to the existing development pseudo-version. No installed
+The SDK remains pinned to the published `libs/plugin-mcp` v0.1.1. No installed
 release pin is advanced. These bundles are source integration artifacts until
 the approved SDK release and Tangent decoder/compatibility adoption land.
-The messaging plugin is absent and is not represented by a placeholder.
+The messaging module now ships its own reviewed declaration and host-managed
+scalar configuration (see [its guide](../messaging/README.md)).
+
+## Chat-agent source scaffold
+
+The [chat-agent module](../chat-agent/README.md) contributes
+`tangent.chat_agent_status` with read effect and
+`GET /api/plugins/chat-agent/status` with participant View. Its manifest has no
+kinds, browser assets, hooks, capability requests or secrets. Reviewed configuration
+contains only backend selection, opaque conversation/agent references and UI
+preferences. The host owns persistence and enable intent; the child snapshots
+Init.Config and writes no conversation content or private files. Status reports
+backend/binding/UI unavailability rather than pretending those contracts exist.
+The chat-agent guide includes the existing host documentation gate's
+`requires-tool` marker. Stage that guide under the host's `docs/plugins/` when
+adopting the bundle in a future source-smoke/release roster update; the host
+includes such manuals only when their declared tool actually ships.
+
+The existing host's unknown-ID default is enabled. A reviewed public default-off
+install contract is still required before claiming opt-in installation acceptance;
+a manifest cannot override that host policy. Source-only packaged lifecycle tests
+use test-owned host/data and do not install or enable live plugins.

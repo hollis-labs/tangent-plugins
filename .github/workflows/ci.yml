@@ -14,7 +14,7 @@ jobs:
       matrix:
         # One job per plugin: each is its own module, and one must not be able
         # to break another's build.
-        plugin: [github, runner, tesseract, torque, messaging]
+        plugin: [github, runner, tesseract, torque, messaging, chat-agent]
     # Everything a plugin needs is public (tangent, plugin-sdk and the
     # hollis-labs Go modules), so there is no private-module token here.
     env:
