@@ -222,8 +222,17 @@ func TestProjectViewManyToOneAmbiguityAndScopeBeforeCap(t *testing.T) {
 		t.Fatalf("explicit selectors: %v", fake.calls)
 	}
 	external, err := s.ViewProject(t.Context(), "msg://project/external/a", 20, nil)
-	if err != nil || external.LocalTotal != 1 || external.Items[0].ID != "ID-external" {
-		t.Fatal("external URN fabricated/lost", err)
+	if err != nil || external.LocalTotal != 0 {
+		t.Fatal("unsynced external URN confirmed canonical membership", err)
+	}
+	found := false
+	for _, item := range external.Unscoped {
+		if item.ID == "ID-external" && len(item.Membership.Unresolved) > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("unsynced external reference lost diagnostic evidence")
 	}
 	if got := currentSnapshot(t, s); got.digest != snap.digest {
 		t.Fatal("view changed source")

@@ -19,6 +19,9 @@ func ValidURN(s string) bool {
 // ValidProjectID validates the public Torque project identifier form.
 func ValidProjectID(s string) bool { return projectID.MatchString(s) }
 
+// ValidTaskID validates the public Torque task identifier form.
+func ValidTaskID(s string) bool { return taskID.MatchString(s) }
+
 // ExternalID preserves explicit mapping provenance, including unresolved IDs.
 type ExternalID struct {
 	Substrate  string `json:"substrate"`

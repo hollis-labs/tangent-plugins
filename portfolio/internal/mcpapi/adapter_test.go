@@ -189,7 +189,9 @@ func (*fixturePlugin) Unload(context.Context) error { return nil }
 
 func sdkSession(t *testing.T, adapter *Adapter) func(int64, string, any) subprocess.RPCResponse {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	// Each RPC gets its own bounded wait. One deadline for the entire transcript
+	// expires during otherwise healthy later writes under race instrumentation.
+	ctx, cancel := context.WithCancel(t.Context())
 
 	in, input := io.Pipe()
 	output, out := io.Pipe()
@@ -199,14 +201,43 @@ func sdkSession(t *testing.T, adapter *Adapter) func(int64, string, any) subproc
 		done <- subprocess.ServeWithOptions(&fixturePlugin{adapter}, subprocess.ServeOptions{Context: ctx, Input: in, Output: out})
 	}()
 	encoder, decoder := json.NewEncoder(input), json.NewDecoder(output)
+	closeSession := func() {
+		cancel()
+		_ = input.Close()
+		_ = in.Close()
+		_ = output.Close()
+		_ = out.Close()
+	}
+	// Register before init/load so a failed handshake also releases the server.
+	t.Cleanup(func() {
+		defer closeSession()
+		_ = input.Close()
+		timer := time.NewTimer(10 * time.Second)
+		defer timer.Stop()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-timer.C:
+			t.Error("SDK fixture shutdown exceeded its bounded wait")
+		}
+	})
 	call := func(id int64, method string, params any) subprocess.RPCResponse {
 		t.Helper()
+		callCtx, cancelCall := context.WithTimeout(ctx, 10*time.Second)
+		// Cancellation must unblock pipe I/O as well as cancel the handler.
+		stop := context.AfterFunc(callCtx, closeSession)
+		defer func() { stop(); cancelCall() }()
 		if err := encoder.Encode(subprocess.RPCRequest{JSONRPC: "2.0", ID: subprocess.NumberID(id), Method: method, Params: params}); err != nil {
 			t.Fatal(err)
 		}
 		var reply subprocess.RPCResponse
 		if err := decoder.Decode(&reply); err != nil {
 			t.Fatal(err)
+		}
+		if err := callCtx.Err(); err != nil {
+			t.Fatalf("SDK RPC %d %s exceeded its bounded wait: %v", id, method, err)
 		}
 		if reply.Error != nil {
 			t.Fatal(reply.Error)
@@ -216,16 +247,6 @@ func sdkSession(t *testing.T, adapter *Adapter) func(int64, string, any) subproc
 	dir := t.TempDir()
 	call(1, subprocess.MethodInit, subprocess.InitParams{PluginDir: dir, DataDir: filepath.Join(dir, "data"), CacheDir: filepath.Join(dir, "cache"), LogLevel: "info", Config: map[string]string{}, HostInfo: subprocess.HostInfo{Version: "fixture", Protocol: subprocess.ProtocolVersion}, CapabilityContract: capability.ContractVersion, Incarnation: capability.RuntimeIdentity{HostInstance: "fixture-host", OwnerID: "fixture-plugin", OwnerGeneration: 1}})
 	call(2, subprocess.MethodLoad, map[string]any{})
-	t.Cleanup(func() {
-		input.Close()
-		if err := <-done; err != nil {
-			t.Error(err)
-		}
-		cancel()
-		in.Close()
-		output.Close()
-		out.Close()
-	})
 	return call
 }
 

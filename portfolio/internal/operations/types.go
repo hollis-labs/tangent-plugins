@@ -76,6 +76,8 @@ type execution struct {
 	who     string
 	now     time.Time
 	ctx     context.Context
+	scope   *queryScope
+	budget  *scanBudget
 }
 
 func (s *Service) clock() time.Time {
@@ -131,10 +133,20 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 			}
 		}()
 	}
-	for _, key := range []string{"scope", "project_scope", "workstream_scope"} {
+	for _, key := range []string{"project_scope", "workstream_scope"} {
 		if _, requested := in[key]; requested {
 			return nil, failure("unsupported", "query scope unavailable", nil)
 		}
+	}
+	scope, scopeErr := parseScope(name, in)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	executionContext := ctx
+	if scope != nil {
+		scopedContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		executionContext = scopedContext
 	}
 	if name == "list" || name == "search" || name == "board" {
 		for _, key := range []string{"project", "project_id", "workstream", "workstream_id"} {
@@ -149,7 +161,7 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 	if name == "batch" {
 		return s.callBatch(ctx, caller, in)
 	}
-	x := &execution{service: s, ctx: ctx, now: s.clock().Truncate(time.Millisecond)}
+	x := &execution{service: s, ctx: executionContext, now: s.clock().Truncate(time.Millisecond), scope: scope, budget: &scanBudget{}}
 	if op.Write && s.Verify == nil && s.Admit == nil {
 		return nil, failure("unavailable", "verified caller authority unavailable", nil)
 	}
@@ -190,11 +202,14 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 			return nil, failure("unavailable", "shadow store unavailable", nil)
 		}
 		err = s.Store.Transact(ctx, run)
-	} else if localOperation(name) {
+	} else if localOperation(name) || scope != nil {
 		if s.Store == nil {
 			return nil, failure("unavailable", "shadow store unavailable", nil)
 		}
-		x.state, err = s.Store.ReadState(ctx)
+		x.state, err = s.Store.ReadState(x.ctx)
+		if err == nil {
+			err = x.checkScope()
+		}
 		if err == nil {
 			result, err = op.handler(x, in)
 		}
@@ -205,7 +220,7 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 		return nil, serviceFailure(err)
 	}
 	if name == "list" || name == "search" {
-		result, err = pageResult(name, in, x.state, result)
+		result, err = scopedLocalResult(x, name, in, result)
 		if err != nil {
 			return nil, err
 		}
@@ -232,6 +247,12 @@ func localOperation(name string) bool {
 }
 func (x *execution) day() string { return x.now.Format("2006-01-02") }
 func (x *execution) upstream(name string, input object) (any, error) {
+	if x.scope != nil && scopeOperation(name) {
+		return x.scopedUpstream(name, input)
+	}
+	return x.rawUpstream(name, input)
+}
+func (x *execution) rawUpstream(name string, input object) (any, error) {
 	validated, err := upstreamInput(name, input)
 	if err != nil {
 		return nil, err

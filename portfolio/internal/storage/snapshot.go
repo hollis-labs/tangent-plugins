@@ -142,11 +142,29 @@ func ParseSnapshot(files map[string][]byte) (*Snapshot, error) {
 	}
 	for _, table := range projectionTables {
 		rows := s.projections[table]
-		sort.Slice(rows, func(i, j int) bool { return encode(rows[i]) < encode(rows[j]) })
+		sortProjectionRows(rows)
 		s.projections[table] = rows
 	}
 	s.digest = hashBytes([]byte(encode(s.envelopes)))
 	return s, nil
+}
+
+// The encoded row is the existing canonical comparison key. Compute it once
+// per row rather than repeatedly encoding full JSON during O(n log n) sorting.
+// This preserves verification order, row types and lossless source bytes.
+func sortProjectionRows(rows [][]any) {
+	type keyedRow struct {
+		key string
+		row []any
+	}
+	keyed := make([]keyedRow, len(rows))
+	for n, row := range rows {
+		keyed[n] = keyedRow{encode(row), row}
+	}
+	sort.Slice(keyed, func(a, b int) bool { return keyed[a].key < keyed[b].key })
+	for n, entry := range keyed {
+		rows[n] = entry.row
+	}
 }
 func stringOrNil(v any) any {
 	if s, ok := v.(string); ok {
