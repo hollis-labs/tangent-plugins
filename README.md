@@ -20,7 +20,12 @@ schedule. Tangent's binary stays domain-free.
 | `runner` | `tangent.plugin.runner` | Supervises an agent process (or a Tether session) and carries its turns to Tangent's agent-turns inbox and the operator's answers back. |
 | `tesseract` | `tangent.plugin.tesseract` | A review board over Tesseract records: deprecate in place, hand promotions and rewords back to the agent. |
 | `torque` | `tangent.plugin.torque` | A board over Torque's task list; Sync pushes staged status moves back without an agent turn. |
+| `chat-agent` | `tangent.plugin.chat-agent` | Inert chat thin-client scaffold with host settings and read-only availability; backend, binding, UI and default-off install remain gated. |
 | `messaging` | `tangent.plugin.messaging` | Serial committed-channel intake with a private SQLite ledger, bounded stateless stages and immutable prepared Tangent publications. |
+
+The [chat-agent guide](chat-agent/README.md) documents its source-only lifecycle,
+settings and default-off host prerequisite. Its public Tangent source pin is
+separate from installed release pins.
 
 Each plugin's README documents its tools. Tangent's
 [`docs/mcp-integration.md`](https://github.com/hollis-labs/tangent/blob/main/docs/mcp-integration.md) links the installed-plugin guides.
@@ -78,7 +83,7 @@ torque/                     module github.com/hollis-labs/tangent-plugins/torque
   cmd/tangent-plugin-torque/  entrypoint; `--manifest` prints its plugin.yaml
   internal/torque/            the plugin
   Makefile                    test / lint / build / dist
-github/, runner/, tesseract/, messaging/  the same shape
+github/, runner/, tesseract/, messaging/, chat-agent/  the same shape
 dist/tangent.plugin.<p>/    built, installable plugin directory (gitignored)
 ```
 
