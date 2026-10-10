@@ -30,8 +30,12 @@ func (s *Store) Import(ctx context.Context, snapshot *Snapshot) (bool, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	var existing string
-	err = tx.QueryRowContext(ctx, "SELECT digest FROM import_receipts").Scan(&existing)
+	var mutated sql.NullString
+	err = tx.QueryRowContext(ctx, "SELECT digest,mutated_at FROM import_receipts").Scan(&existing, &mutated)
 	if err == nil {
+		if mutated.Valid {
+			return false, errors.New("shadow relationships changed since import; choose a fresh shadow database for replay")
+		}
 		if existing != snapshot.digest {
 			return false, errors.New("different snapshot already imported; choose a fresh shadow database")
 		}
@@ -138,14 +142,24 @@ func (s *Store) Export(ctx context.Context) (map[string][]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	out, err := exportTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func exportTx(ctx context.Context, tx *sql.Tx) (map[string][]byte, error) {
 	out := map[string][]byte{}
 	for _, name := range databaseNames {
 		var data string
-		if err = tx.QueryRowContext(ctx, "SELECT data FROM envelopes WHERE db=?", name).Scan(&data); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT data FROM envelopes WHERE db=?", name).Scan(&data); err != nil {
 			return nil, err
 		}
-		var envelope map[string]any
-		envelope, err = decodeObject([]byte(data))
+		envelope, err := decodeObject([]byte(data))
 		if err != nil {
 			return nil, err
 		}
@@ -182,9 +196,6 @@ func (s *Store) Export(ctx context.Context) (map[string][]byte, error) {
 		return nil, err
 	}
 	if err = verify(ctx, tx, snapshot); err != nil {
-		return nil, err
-	}
-	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
 	return out, nil
