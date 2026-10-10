@@ -151,6 +151,14 @@ func stringOrNil(v any) any {
 	return nil
 }
 func (s *Snapshot) children(id string, item map[string]any) error {
+	edges := map[string]bool{}
+	addEdge := func(target, typ, field string) {
+		key := encode([]string{target, typ, field})
+		if !edges[key] {
+			edges[key] = true
+			s.projections["edges"] = append(s.projections["edges"], []any{id, target, typ, field})
+		}
+	}
 	for _, kind := range []string{"comments", "links"} {
 		v, exists := item[kind]
 		if !exists || v == nil {
@@ -183,6 +191,9 @@ func (s *Snapshot) children(id string, item map[string]any) error {
 					return errors.New("link ref required")
 				}
 				s.projections[kind] = append(s.projections[kind], []any{id, int64(n), k, ref, stringOrNil(obj["label"]), encode(obj)})
+				if k == "workstream" {
+					addEdge(ref, "belongs_to", "links.workstream")
+				}
 			}
 		}
 	}
@@ -204,17 +215,7 @@ func (s *Snapshot) children(id string, item map[string]any) error {
 			return fmt.Errorf("%s must be an array", field)
 		}
 		seen := map[string]bool{}
-		typ := "related"
-		switch field {
-		case "depends_on":
-			typ = "depends_on"
-		case "decision_ids":
-			typ = "decision_gates"
-		case "project_ids", "workstream_ids":
-			typ = "belongs_to"
-		case "supersedes":
-			typ = "supersedes"
-		}
+		typ := legacyEdgeType(field)
 		for _, v := range targets {
 			target, ok := v.(string)
 			if !ok || target == "" {
@@ -224,7 +225,17 @@ func (s *Snapshot) children(id string, item map[string]any) error {
 				continue
 			}
 			seen[target] = true
-			s.projections["edges"] = append(s.projections["edges"], []any{id, target, typ, field})
+			addEdge(target, typ, field)
+		}
+	}
+	metadata, err := relationshipMetadata(item)
+	if err != nil {
+		return err
+	}
+	if metadata != nil {
+		for _, entry := range metadata["edges"].([]any) {
+			edge := entry.(map[string]any)
+			addEdge(edge["target"].(string), edge["type"].(string), relationshipField)
 		}
 	}
 	return nil
