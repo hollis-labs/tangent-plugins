@@ -17,9 +17,11 @@ type TaskReader interface {
 
 // Membership preserves all explicit candidates and unresolved provenance.
 type Membership struct {
-	Projects   []string
-	Unresolved []string
-	Ambiguous  bool
+	Projects    []string        `json:"projects"`
+	Workstreams []string        `json:"workstreams"`
+	Unresolved  []string        `json:"unresolved"`
+	Ambiguous   bool            `json:"ambiguous"`
+	Sources     []ProjectSource `json:"sources"`
 }
 
 // ProjectItem is a view, not a new item or writer.
@@ -61,7 +63,6 @@ type ProjectView struct {
 type viewItem struct {
 	id, db, data string
 	obj          map[string]any
-	edges        []Edge
 }
 
 // ViewProject resolves local item→workstream→project membership and fetches only
@@ -73,60 +74,28 @@ func (s *Store) ViewProject(ctx context.Context, urn string, limit int, torque T
 	if !projects.ValidURN(urn) || limit < 1 || limit > 200 {
 		return ProjectView{}, projects.Invalid
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	state, err := s.ReadState(ctx)
 	if err != nil {
 		return ProjectView{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	records, err := queryProjectMappings(ctx, tx)
-	if err != nil {
-		return ProjectView{}, err
-	}
-	rows, err := tx.QueryContext(ctx, "SELECT id,db,data FROM items ORDER BY db,ordinal")
-	if err != nil {
-		return ProjectView{}, err
-	}
-	all := map[string]*viewItem{}
+	index := state.Membership
+	records := index.mappings
 	ordered := []*viewItem{}
-	for rows.Next() {
-		v := &viewItem{}
-		if err = rows.Scan(&v.id, &v.db, &v.data); err != nil {
-			_ = rows.Close()
-			return ProjectView{}, err
+	databases := make([]string, 0, len(state.Envelopes))
+	for db := range state.Envelopes {
+		databases = append(databases, db)
+	}
+	sort.Strings(databases)
+	for _, db := range databases {
+		for _, value := range state.Envelopes[db]["items"].([]any) {
+			item := value.(map[string]any)
+			ordered = append(ordered, &viewItem{id: item["id"].(string), db: db, data: encode(item), obj: item})
 		}
-		v.obj, err = decodeObject([]byte(v.data))
-		if err != nil {
-			_ = rows.Close()
-			return ProjectView{}, err
-		}
-		all[v.id] = v
-		ordered = append(ordered, v)
-	}
-	if err = rows.Err(); err != nil {
-		_ = rows.Close()
-		return ProjectView{}, err
-	}
-	if err = rows.Close(); err != nil {
-		return ProjectView{}, err
-	}
-	edges, err := queryEdges(ctx, tx, "SELECT from_id,to_id,type,field FROM edges WHERE type='belongs_to' ORDER BY from_id,to_id,field")
-	if err != nil {
-		return ProjectView{}, err
-	}
-	for _, e := range edges {
-		if v := all[e.FromID]; v != nil {
-			v.edges = append(v.edges, e)
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		return ProjectView{}, err
 	}
 	out := ProjectView{URN: urn, Items: []ProjectItem{}, Unscoped: []ProjectItem{}, Tasks: []TaskMembership{}, TaskEvidence: []TaskQueryEvidence{}}
-	memberships := map[string]Membership{}
 	selectors := map[string][2]string{}
 	for _, v := range ordered {
-		m := resolveMembership(v, all, records, map[string]bool{})
-		memberships[v.id] = m
+		m := index.Resolve(v.id)
 		item := ProjectItem{v.id, v.db, json.RawMessage(v.data), m}
 		if contains(m.Projects, urn) {
 			out.LocalTotal++
@@ -144,7 +113,7 @@ func (s *Store) ViewProject(ctx context.Context, urn string, limit int, torque T
 				}
 			}
 		}
-		if len(m.Projects) == 0 || m.Ambiguous || len(m.Unresolved) > 0 {
+		if m.Unscoped() {
 			out.UnscopedTotal++
 			if len(out.Unscoped) < limit {
 				out.Unscoped = append(out.Unscoped, item)
@@ -209,30 +178,11 @@ func (s *Store) ViewProject(ctx context.Context, urn string, limit int, torque T
 	sort.Strings(taskKeys)
 	for _, id := range taskKeys {
 		task := taskRows[id]
-		m := Membership{Projects: append([]string{}, records[task.ProjectID]...), Unresolved: []string{}}
-		if task.ProjectID != "" && len(m.Projects) == 0 {
-			m.Unresolved = append(m.Unresolved, "torque:"+task.ProjectID)
+		tags := []string{}
+		for _, tag := range task.Tags {
+			tags = append(tags, tag.Slug)
 		}
-		for _, v := range ordered {
-			if v.db != "workstreams" {
-				continue
-			}
-			matches := contains(stringValues(v.obj["torque_project_ids"]), task.ProjectID) && task.ProjectID != ""
-			if tag, ok := v.obj["torque_tag"].(string); ok && tag != "" {
-				for _, t := range task.Tags {
-					if t.Slug == tag {
-						matches = true
-					}
-				}
-			}
-			if matches {
-				m.Projects = append(m.Projects, memberships[v.id].Projects...)
-				m.Unresolved = append(m.Unresolved, memberships[v.id].Unresolved...)
-			}
-		}
-		m.Projects = unique(m.Projects)
-		m.Unresolved = unique(m.Unresolved)
-		m.Ambiguous = len(m.Projects) > 1
+		m := index.Task(task.ProjectID, tags)
 		if contains(m.Projects, urn) {
 			out.TaskTotal++
 			if len(out.Tasks) < limit {
@@ -244,64 +194,6 @@ func (s *Store) ViewProject(ctx context.Context, urn string, limit int, torque T
 	return out, nil
 }
 
-func queryProjectMappings(ctx context.Context, q edgeQuerier) (map[string][]string, error) {
-	rows, err := q.QueryContext(ctx, "SELECT urn,source_data FROM projects WHERE registry_state IN ('fresh','stale','partial')")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[string][]string{}
-	for rows.Next() {
-		var urn, data string
-		if err = rows.Scan(&urn, &data); err != nil {
-			return nil, err
-		}
-		var p projects.Project
-		if err = json.Unmarshal([]byte(data), &p); err != nil {
-			return nil, err
-		}
-		for _, id := range p.TorqueIDs() {
-			out[id] = append(out[id], urn)
-		}
-	}
-	for id := range out {
-		out[id] = unique(out[id])
-	}
-	return out, rows.Err()
-}
-func resolveMembership(v *viewItem, all map[string]*viewItem, mappings map[string][]string, visiting map[string]bool) Membership {
-	m := Membership{Projects: []string{}, Unresolved: []string{}}
-	if visiting[v.id] {
-		m.Unresolved = append(m.Unresolved, "cycle:"+v.id)
-		return m
-	}
-	visiting[v.id] = true
-	defer delete(visiting, v.id)
-	for _, e := range v.edges {
-		if projects.ValidURN(e.ToID) {
-			m.Projects = append(m.Projects, e.ToID)
-			continue
-		}
-		if target := all[e.ToID]; target != nil && target.db == "workstreams" {
-			nested := resolveMembership(target, all, mappings, visiting)
-			m.Projects = append(m.Projects, nested.Projects...)
-			m.Unresolved = append(m.Unresolved, nested.Unresolved...)
-			continue
-		}
-		m.Unresolved = append(m.Unresolved, e.Field+":"+e.ToID)
-	}
-	for _, id := range stringValues(v.obj["torque_project_ids"]) {
-		if urns := mappings[id]; len(urns) > 0 {
-			m.Projects = append(m.Projects, urns...)
-		} else {
-			m.Unresolved = append(m.Unresolved, "torque:"+id)
-		}
-	}
-	m.Projects = unique(m.Projects)
-	m.Unresolved = unique(m.Unresolved)
-	m.Ambiguous = len(m.Projects) > 1
-	return m
-}
 func stringValues(v any) []string {
 	out := []string{}
 	if list, ok := v.([]any); ok {

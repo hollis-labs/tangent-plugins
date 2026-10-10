@@ -141,14 +141,29 @@ func board(x *execution, in object) (any, error) {
 	tasks := map[string][]object{}
 	totals := map[string]int{}
 	notices := []any{}
+	scopeEvidence := object{}
+	upstreamRefused := false
 	after := x.now.Add(-time.Duration(recent * float64(time.Hour))).Truncate(time.Minute).UTC().Format("2006-01-02T15:04:05Z")
 	for _, status := range boardStatuses {
+		if upstreamRefused {
+			scopeEvidence[status] = object{"partial": true, "code": "authority_refused"}
+			continue
+		}
 		query := object{"status": status, "sort_by": "updated_at", "sort_dir": "desc", "limit": json.Number(fmt.Sprint(limit)), "include_total": true}
 		if status == "done" {
 			query["updated_after"] = after
 		}
 		got, err := x.upstream("torque_tasks", query)
 		if err != nil {
+			if x.scope != nil {
+				scopeEvidence[status] = object{"partial": true, "code": "unavailable"}
+				var domain *Error
+				if upstreamAuthorityRefused(err) || errors.As(err, &domain) && domain.Details["invalidate_prior"] == true {
+					upstreamRefused = true
+					tasks = map[string][]object{}
+					totals = map[string]int{}
+				}
+			}
 			reason := safeUpstreamReason(err)
 			if len(notices) == 0 {
 				firstFailure = reason
@@ -163,8 +178,18 @@ func board(x *execution, in object) (any, error) {
 		}
 		tasks[status] = objects(result["items"])
 		meta, _ := result["meta"].(object)
+		if x.scope != nil {
+			scopeEvidence[status] = object{"meta": meta, "queries": result["evidence"]}
+			if meta["partial"] == true {
+				notices = append(notices, "Scoped Torque "+status+" tasks are partial; totals are lower bounds.")
+			}
+		}
 		if n, ok := integer(meta["total"]); ok && n >= 0 && n <= 9007199254740991 {
 			totals[status] = int(n)
+		} else if x.scope != nil {
+			if n, ok := integer(meta["lower_bound"]); ok && n >= 0 && n <= scopeMaxRows {
+				totals[status] = int(n)
+			}
 		}
 	}
 	if len(notices) == len(boardStatuses) {
@@ -174,15 +199,53 @@ func board(x *execution, in object) (any, error) {
 	activityOK := true
 	if doing, has := tasks["doing"]; has {
 		for _, task := range doing {
+			if x.scope != nil && (x.budget.pages >= scopeMaxPages || x.budget.rows >= scopeMaxRows || x.budget.bytes >= scopeMaxBytes) {
+				activityOK = false
+				break
+			}
+			if x.scope != nil {
+				x.budget.pages++
+			}
 			got, err := x.upstream("torque_task", object{"id": task["id"]})
 			if err != nil {
 				activityOK = false
+				if x.scope != nil && upstreamAuthorityRefused(err) {
+					upstreamRefused = true
+					tasks = map[string][]object{}
+					totals = map[string]int{}
+					break
+				}
 				continue
 			}
 			result, ok := got.(object)
 			if !ok {
 				activityOK = false
 				continue
+			}
+			if x.scope != nil {
+				raw, encodeErr := json.Marshal(result)
+				comments, validComments := result["comments"].([]any)
+				for _, value := range comments {
+					comment, ok := value.(object)
+					if !ok {
+						validComments = false
+						break
+					}
+					if _, ok := parseDate(str(comment["created_at"])); !ok {
+						validComments = false
+						break
+					}
+				}
+				if encodeErr != nil || len(raw) > scopeMaxBytes-x.budget.bytes || len(comments) > scopeMaxRows-x.budget.rows {
+					activityOK = false
+					break
+				}
+				x.budget.bytes += len(raw)
+				x.budget.rows += len(comments)
+				meta, _ := result["comments_meta"].(object)
+				if !validComments || meta["has_more"] != false {
+					activityOK = false
+				}
 			}
 			latest := ""
 			for _, c := range objects(result["comments"]) {
@@ -198,7 +261,53 @@ func board(x *execution, in object) (any, error) {
 			notices = append(notices, "Torque comments unavailable; every doing task is shown as in flight.")
 		}
 	}
-	return composeBoard(x, recent, active, int(limit), tasks, totals, activity, activityOK, notices), nil
+	out := composeBoard(x, recent, active, int(limit), tasks, totals, activity, activityOK, notices)
+	if x.scope != nil {
+		if upstreamRefused {
+			scopeEvidence = object{}
+			for _, status := range boardStatuses {
+				scopeEvidence[status] = object{"partial": true, "code": "prior_results_invalidated"}
+			}
+		}
+		scopeEvidence["activity"] = object{"complete": activityOK, "partial": !activityOK}
+		out["scope"] = x.scope
+		out["totals_kind"] = "selected_estimates"
+		out["upstream"] = scopeEvidence
+		membership := object{}
+		unscoped := []any{}
+		for _, section := range boardSections {
+			values := out["sections"].(object)[section]
+			for _, value := range values.([]any) {
+				row := value.(object)
+				id := str(row["id"])
+				key := str(row["source"]) + ":" + id
+				var m any
+				if row["source"] == "torque" {
+					for _, group := range tasks {
+						for _, task := range group {
+							if task["id"] == id {
+								resolved := x.taskMembership(task)
+								m = resolved
+								if resolved.Unscoped() {
+									unscoped = append(unscoped, key)
+								}
+							}
+						}
+					}
+				} else {
+					resolved := x.state.Membership.Resolve(id)
+					m = resolved
+					if resolved.Unscoped() {
+						unscoped = append(unscoped, key)
+					}
+				}
+				membership[key] = m
+			}
+		}
+		out["membership"] = membership
+		out["unscoped"] = object{"ids": unscoped, "returned": len(unscoped), "diagnostic_overlap": true}
+	}
+	return out, nil
 }
 func composeBoard(x *execution, recent, active float64, limit int, tasks map[string][]object, totals map[string]int, activity map[string]time.Time, activityOK bool, notices []any) object {
 	torqueRows := func(status string) []boardRow {

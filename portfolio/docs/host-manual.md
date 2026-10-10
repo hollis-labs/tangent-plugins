@@ -98,9 +98,11 @@ and partial=false. Local total is exact only for that complete admitted cohort;
 an upstream board estimate is a different contract. At the offset ceiling,
 has_more can remain true while next_offset is null; narrow the query or restart.
 
-Domain filters and whole-cohort admission apply before paging and totals. No
-project/workstream membership algorithm is implemented in this slice. Explicit
-scope requests are refused as unsupported, never broadened or silently ignored.
+Domain filters and whole-cohort admission apply before paging and totals. The
+source-only0105 [scope contract](query-scopes.md) implements strict project,
+workstream and unscoped arguments with selected-only membership evidence.
+Structural list/facet disposition remains pending review; unsupported scoped
+lanes refuse without broadening. Production scopes remain unbound.
 Missing upstream integrations remain unavailable or board notices, not complete
 empty result sets. Input is bounded to 32 KiB and output to 1 MiB. An oversized
 result is refused without partial disclosure.

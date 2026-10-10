@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 
 	"github.com/hollis-labs/tangent-plugins/portfolio/internal/textcompat"
@@ -120,7 +119,7 @@ func verify(ctx context.Context, tx *sql.Tx, snapshot *Snapshot) error {
 		if err = rows.Close(); err != nil {
 			return err
 		}
-		sort.Slice(actual, func(i, j int) bool { return encode(actual[i]) < encode(actual[j]) })
+		sortProjectionRows(actual)
 		want := snapshot.projections[table]
 		if len(actual) != len(want) || !equalRows(actual, want) {
 			return fmt.Errorf("parity mismatch in %s", table)
