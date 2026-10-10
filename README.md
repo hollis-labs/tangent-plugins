@@ -20,11 +20,11 @@ schedule. Tangent's binary stays domain-free.
 | `runner` | `tangent.plugin.runner` | Supervises an agent process (or a Tether session) and carries its turns to Tangent's agent-turns inbox and the operator's answers back. |
 | `tesseract` | `tangent.plugin.tesseract` | A review board over Tesseract records: deprecate in place, hand promotions and rewords back to the agent. |
 | `torque` | `tangent.plugin.torque` | A board over Torque's task list; Sync pushes staged status moves back without an agent turn. |
-| `chat-agent` | `tangent.plugin.chat-agent` | Inert chat thin-client scaffold with host settings and read-only availability; backend, binding, UI and default-off install remain gated. |
+| `chat-agent` | `tangent.plugin.chat-agent` | Inert chat thin-client scaffold with host settings and read-only availability; explicit host opt-in; backend, binding and UI remain gated. |
 | `messaging` | `tangent.plugin.messaging` | Serial committed-channel intake with a private SQLite ledger, bounded stateless stages and immutable prepared Tangent publications. |
 
 The [chat-agent guide](chat-agent/README.md) documents its source-only lifecycle,
-settings and default-off host prerequisite. Its public Tangent source pin is
+settings and explicit host opt-in. Its public Tangent source pin is
 separate from installed release pins.
 
 Each plugin's README documents its tools. Tangent's

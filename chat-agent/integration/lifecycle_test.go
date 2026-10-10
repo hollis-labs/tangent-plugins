@@ -302,29 +302,43 @@ func settingsRequest(revision string, set map[string]any, unset []string) map[st
 func (f *fixture) checkContributions(t *testing.T, enabled bool) {
 	t.Helper()
 	var inventory struct {
+		Kinds   []string `json:"contributed_kinds"`
 		Tools   []string `json:"contributed_tools"`
 		Routes  []string `json:"contributed_routes"`
 		Plugins []struct {
 			ID      string `json:"id"`
 			Enabled bool   `json:"enabled"`
 			Loaded  bool   `json:"loaded"`
+			State   string `json:"state"`
 		} `json:"plugins"`
 	}
 	f.require(t, "GET", "/api/plugin-management", nil, &inventory)
 	if slices.Contains(inventory.Tools, tool) != enabled || slices.Contains(inventory.Routes, "GET "+route) != enabled {
 		t.Fatal("contributions disagree with lifecycle", inventory)
 	}
+	if len(inventory.Kinds) != 0 {
+		t.Fatal("inert scaffold contributed a renderer kind", inventory.Kinds)
+	}
 	found := false
 	for _, record := range inventory.Plugins {
 		if record.ID == pluginID {
 			found = true
-			if record.Enabled != enabled || record.Loaded != enabled {
+			state := "disabled"
+			if enabled {
+				state = "running"
+			}
+			if record.Enabled != enabled || record.Loaded != enabled || record.State != state {
 				t.Fatal("owner state", record)
 			}
 		}
 	}
 	if !found {
 		t.Fatal("missing installed owner")
+	}
+	// This scaffold declares no browser assets; the public catalog must not offer it.
+	catalog := f.require(t, "GET", "/api/plugins/registry", nil, nil)
+	if bytes.Contains(catalog, []byte(pluginID)) {
+		t.Fatal("inert scaffold advertised browser contribution", string(catalog))
 	}
 	raw := f.require(t, "POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": map[string]any{}}, nil)
 	if bytes.Contains(raw, []byte(tool)) != enabled {
@@ -364,12 +378,18 @@ func (f *fixture) checkContributions(t *testing.T, enabled bool) {
 	}
 }
 
-func TestPackagedLifecycleSettingsAndDisabledRestart(t *testing.T) {
+func TestPackagedDefaultOffLifecycleSettingsAndRestart(t *testing.T) {
 	f := newFixture(t)
 	f.start(t)
-	// Current public host auto-enables unknown IDs. This demonstrates lifecycle,
-	// not default-off installation: that prerequisite is explicitly still unmet.
-	f.checkContributions(t, true)
+	// Unknown installed IDs remain inert, including across restart and upgrade.
+	f.checkContributions(t, false)
+	if code, _ := f.request(t, "POST", management+"/reload", map[string]any{}); code != 409 {
+		t.Fatal("reload enabled unknown disabled plugin", code)
+	}
+	f.stop(t)
+	f.run(t, f.binary, []string{"plugin", "install", f.bundle})
+	f.start(t)
+	f.checkContributions(t, false)
 	var groups struct {
 		Groups []struct {
 			ID     string `json:"id"`
@@ -390,7 +410,23 @@ func TestPackagedLifecycleSettingsAndDisabledRestart(t *testing.T) {
 	if fields["rail_open"].Type != "boolean" || fields["rail_open"].Default != false || !slices.Contains(fields["density"].Enum, "compact") {
 		t.Fatal("typed settings form projection", fields)
 	}
+	// Settings remain available while disabled; Save cannot change enable intent.
 	before := f.config(t)
+	f.require(t, "POST", management+"/config/save", settingsRequest(before.Revision, map[string]any{"density": "compact"}, []string{}), nil)
+	f.checkContributions(t, false)
+	if code, _ := f.request(t, "POST", management+"/config/apply", settingsRequest(f.config(t).Revision, map[string]any{}, []string{})); code != 409 {
+		t.Fatal("apply enabled newly installed plugin", code)
+	}
+	f.stop(t)
+	f.run(t, f.binary, []string{"plugin", "enable", pluginID})
+	// An ordinary upgrade preserves explicit true intent without --enable.
+	f.run(t, f.binary, []string{"plugin", "install", f.bundle})
+	f.start(t)
+	f.checkContributions(t, true)
+	// Return to defaults before checking detached running settings snapshots.
+	f.require(t, "POST", management+"/config/reset", settingsRequest(f.config(t).Revision, map[string]any{}, []string{"density"}), nil)
+	f.require(t, "POST", management+"/config/apply", settingsRequest(f.config(t).Revision, map[string]any{}, []string{}), nil)
+	before = f.config(t)
 	update := settingsRequest(before.Revision, map[string]any{"conversation_ref": "synthetic-conversation", "agent_ref": "synthetic-agent", "rail_open": true, "density": "compact"}, []string{})
 	f.require(t, "POST", management+"/config/validate", update, nil)
 	var saved snapshot
@@ -427,6 +463,8 @@ func TestPackagedLifecycleSettingsAndDisabledRestart(t *testing.T) {
 		t.Fatal("apply enabled disabled plugin", code)
 	}
 	f.stop(t)
+	// Ordinary upgrade also preserves explicit false intent.
+	f.run(t, f.binary, []string{"plugin", "install", f.bundle})
 	f.start(t)
 	f.checkContributions(t, false)
 	f.require(t, "POST", management+"/enable", map[string]any{}, nil)
@@ -437,7 +475,10 @@ func TestPackagedLifecycleSettingsAndDisabledRestart(t *testing.T) {
 	}
 	f.require(t, "POST", management+"/reload", map[string]any{}, nil)
 	f.checkContributions(t, true)
+	f.stop(t)
+	f.start(t)
+	f.checkContributions(t, true)
 	f.require(t, "POST", management+"/disable", map[string]any{}, nil)
 	f.checkContributions(t, false)
-	t.Log("packaged install; host settings projection, validation/CAS/save/apply/reset; owner withdrawal; disabled restart; enable/reload; no backend or UI integration")
+	t.Log("packaged default-off install/restart/upgrade; CLI opt-in; preserved true/false intent; host settings projection, validation/CAS/save/apply/reset; owner withdrawal; disabled restart; enable/reload; no backend or UI integration")
 }

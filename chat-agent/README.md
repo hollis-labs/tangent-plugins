@@ -58,7 +58,7 @@ browser settings snapshots expose only secret presence. This module has no
 keychain access, global secret fallback, host callback client or capability
 requests.
 
-## Lifecycle and the default-off prerequisite
+## Lifecycle and explicit opt-in
 
 Build source artifacts with `GOWORK=off make -C chat-agent dist` (or root
 `make dist`). The bundle is `dist/tangent.plugin.chat-agent`, with the native
@@ -74,13 +74,18 @@ disable intent persists across host restarts. No UI contribution exists to rende
 and no agent runs in either state. Saving preferences cannot enable a disabled
 plugin; Apply while disabled refuses.
 
-**Default-off installation is still a host prerequisite.** The source-only host
-pin `72a5ea7176ca` defaults IDs absent from its enable-intent store to enabled,
-and neither manifest-v2 nor its install CLI provides a public default-disabled
-option. This scaffold does not write that store or invent a second enable flag.
-The isolated fixture proves existing enable/disable behavior and records the
-initial auto-enable; it is not default-off install acceptance. Live installation
-must wait for the reviewed host opt-in contract and release/rollout approval.
+The source-only host pin `380db1fa961c` leaves an unknown installed ID disabled.
+An ordinary `tangent plugin install <bundle>` preserves existing boolean intent,
+including an explicit prior enable or disable. To opt in for the next host start,
+use `tangent plugin enable tangent.plugin.chat-agent` or
+`tangent plugin install --enable <bundle>`; CLI changes require host restart.
+For a running host, Settings provides participant-authorized lifecycle controls
+and reports desired intent separately from runtime state. An enabled-but-failed
+plugin is not ready. The manifest and plugin settings cannot change enable intent.
+
+The isolated source fixture verifies default-off installation and restarts against
+that public host commit. This source pin does not adopt an installed host release:
+live installation still requires release/rollout approval.
 
 ## Verification and remaining work
 
@@ -89,13 +94,15 @@ and dist. Run the final author gate through `heavytest`. `make -C chat-agent smo
 is the packaged lifecycle fixture, also exercised by the race suite and CI.
 It compiles the pinned public host and plugin, installs into test-owned paths,
 uses a private HOME/database/plugin root and kernel-assigned loopback port,
-then exercises typed settings projection, validation, revision CAS, Save, Apply,
-Reset, disable, host restart, enable and reload. It checks live MCP registration,
+then verifies disabled install/restart/upgrade, settings Save while disabled and
+refused Apply/Reload, explicit CLI enable, preserved true/false upgrade intent,
+typed settings projection, validation, revision CAS, Save, Apply, Reset, live
+disable/enable, reload and enabled restart. It checks live MCP registration,
 route withdrawal and snapshot cleanup. It submits no secret fields and makes no
 native keychain or provider calls. The source host uses its development HTML
-placeholder: this proves settings form contracts, not a rendered browser form or
-rail acceptance. Unit fixtures exercise refusal, immutable settings snapshots,
-reference nondisclosure and payload tampering.
+placeholder: this proves settings schema/API contracts. Rendered browser form and
+rail acceptance remain unresolved. Unit fixtures exercise refusal, immutable
+settings snapshots, reference nondisclosure and payload tampering.
 
 The Go module pins the public reviewed Tangent commit as a source-only
 pseudo-version, with the published SDK and no `replace`; CI uses `GOWORK=off`.
