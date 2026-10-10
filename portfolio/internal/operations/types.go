@@ -115,19 +115,22 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 		return nil, failure("bad_request", "bad input for "+name, object{"errors": problems})
 	}
 	x := &execution{service: s, ctx: ctx, now: s.clock().Truncate(time.Millisecond)}
-	if op.Write {
-		if s.Verify == nil {
-			return nil, failure("unavailable", "verified caller authority unavailable", nil)
-		}
-		a, verifyErr := s.Verify(ctx, caller, name)
-		if verifyErr != nil || !a.Verified || !a.Allowed || a.Principal == "" {
-			return nil, failure("unavailable", "verified caller authority refused", nil)
-		}
-		x.who = a.Principal
+	if op.Write && s.Verify == nil {
+		return nil, failure("unavailable", "verified caller authority unavailable", nil)
 	}
 	var result any
 	run := func(state *storage.State) error {
 		x.state = state
+		// Resolve current authority after acquiring the writer transaction and
+		// verifying its snapshot, immediately before mutation dispatch. This is
+		// not atomic commit-time authority or a production host verifier.
+		if op.Write {
+			a, verifyErr := s.Verify(ctx, caller, name)
+			if verifyErr != nil || !a.Verified || !a.Allowed || a.Principal == "" {
+				return failure("unavailable", "verified caller authority refused", nil)
+			}
+			x.who = a.Principal
+		}
 		var callErr error
 		result, callErr = op.handler(x, in)
 		return callErr
