@@ -1,9 +1,12 @@
 # Portfolio shadow storage, relationships and Projects
 
-This module implements CW-20261009-0096, CW-20261009-0099, CW-20261009-0100 and CW-20261009-0101 / accepted ADR0015 (DEC067). It is a
+This module implements CW-20261009-0096, CW-20261009-0099, CW-20261009-0100,
+CW-20261009-0101 and the bounded source adapter in CW-20261009-0103 /
+accepted ADR0015 (DEC067). It is a
 shadow storage and copied-snapshot evaluation tool. Node ptrack remains the
-single authoritative writer. There is no installed plugin, MCP/HTTP write
-surface, live synchronization, UI or writer switch here. Read-only Projects clients and
+single authoritative writer. The default-refusing HTTP executable described
+below is a source artifact. There is no installed plugin, authenticated production
+writer, live synchronization, UI or writer switch here. Read-only Projects clients and
 internal shadow sync/view methods are source-only and have no installed carrier.
 
 Use an owned detached copy of all seven JSON files. Never point these commands
@@ -231,8 +234,10 @@ integration, credential, grant, host, installed caller or deployment acceptance.
 operation declarations: names, descriptions, input schemas, write metadata and
 one domain dispatcher. `Registry` returns detached metadata and `Service.Call`
 uses those same declarations for input validation. This package is internal;
-no CLI, MCP, HTTP, installed plugin, live client or authoritative writer exposes
-it. The existing storage CLI retains its copied-snapshot commands.
+0103 adds a source-only HTTP adapter over it with explicit shadow/verifier
+injection for tests and default refusal in the executable. No registry CLI,
+MCP, installed plugin, live client or authoritative writer exposes it. The
+existing storage CLI retains its copied-snapshot commands.
 
 Local behavior covers discovery/schema/contract, ordered/filterable lists,
 get/create/update, comments, item links, external pointers, reorder, decision
@@ -295,8 +300,10 @@ contextual final sigma; ECMAScript whitespace and UTF-16 relational string
 ordering preserve tested search/filter/list behavior. Migration004 rebuilds only
 the derived FTS projection; fixtures verify unchanged JSON, revisions, receipts,
 Projects, relationships and reservations, corrected search after reopen, and
-atomic migration failure/retry. Board ID ties use English collation from pinned
-`golang.org/x/text v0.40.0`. Evidence is bounded to pinned Node22.12.0 and the
+atomic migration failure/retry. Board ID ties use English collation from resolved
+`golang.org/x/text v0.42.0`. The public host pin requires this update in 0103;
+0099 originally verified v0.40.0, and the existing ordering fixtures pass at
+the resolved pin. Evidence is bounded to pinned Node22.12.0 and the
 synthetic Unicode/English ordering cases; arbitrary locales, ICU versions and
 new Unicode-version differences are not claimed equivalent.
 
@@ -329,3 +336,117 @@ Neither the private source nor operator data is bundled, and tests assert no
 registry count or mutable cross-source agreement. `make check` covers the entire
 portfolio module (lint, race and no-cgo build); concurrency stress is limited to
 changed transaction/registry concurrency fixtures.
+
+## Source-only HTTP adapter (0103)
+
+`internal/httpapi` derives literal POST routes from the existing registry;
+the adapter dispatches through `Service.Call`, including its input/item schemas,
+typed errors, lossless projections and atomic shadow transactions. There is no
+second handler registry. This is a new plugin wire contract, with JSON inputs
+instead of lossy URL/query conversions; it does not preserve the Node resource
+URLs, PATCH/DELETE/HEAD support or 1 MiB request limit.
+
+Every path starts with `/api/plugins/portfolio/operations/`:
+
+| Operation suffixes | Method | Host participant capability |
+| --- | --- | --- |
+| databases, list, get, search, schema, contract, board | POST | view |
+| torque_task, torque_tasks, torque_titles, torque_projects, torque_epics, torque_sprints, torque_facets | POST | view |
+| create, update, comment, link, unlink, link_add, link_remove, reorder, inbox_add, inbox_promote, inbox_dismiss | POST | draft |
+| decide, defer, reopen | POST | resolve |
+
+`migrate` remains internal administrative compatibility behavior with no HTTP
+grant. Typed Projects/relationship methods are not new registry routes in this
+slice. No MCP bindings or UI assets are declared. The root install/build roster
+is unchanged; this module is an explicitly built source artifact.
+
+Send `Content-Type: application/json` (optional media parameters), one JSON object
+matching that operation's registry schema, and at most 32 KiB. For example,
+`{"db":"ideas","id":"ID-example"}` to the `get` path or
+`{"db":"ideas","id":"ID-example","rev":2,"patch":{"title":"New"}}`
+to `update`. There is no query argument transport. Null/nonobject roots,
+duplicate keys at any depth, trailing values, excessive nesting, query/body
+ambiguity, escaped alias paths and unsupported carrier headers are rejected.
+Unknown item fields, nulls and numbers otherwise follow domain validation and
+lossless storage. Body `author`/`added_by`/`decided_by` never authenticates; new
+attribution comes from the verifier, while imported provenance stays historical.
+
+Successful domain results retain their existing shapes: 201 for create/inbox_add,
+200 otherwise. Errors use `{"error":{"code":"…","message":"…","details":{}}}`:
+not_found=404, invalid/bad_request=400, conflict=409, locked=423,
+domain unavailable=502. Adapter body/media/method refusals are 413/415/405;
+missing/refused caller authority is generic 503/unavailable. A conflict retains
+the complete current item only while the request remains admitted. Responses
+use JSON and `Cache-Control: no-store`. The real host's method lookup may refuse
+an undeclared method with 404 before adapter dispatch; no Allow header survives
+its response allowlist.
+
+The adapter requires an explicitly injected `VerifyRequest` with an opaque
+request-local SDK Identity, exact operation and detached typed resource input.
+The verifier must resolve current assurance/revocation and all resource grants;
+labels, body fields, query scopes, local participant authority, room leases,
+plugin incarnation and upstream app credentials cannot supply those grants.
+Permission to read one item does not admit list/search/board/contract, links to
+another item, or writes/decisions. A verifier must refuse a scoped broad request
+that the existing service cannot safely constrain. Scope filtering belongs to
+0105; an input filter is not authority. Missing, stale, revoked, unverified or
+empty-principal authority refuses reads and mutations. No authority is cached
+or retained as a shared last caller. Verifier inputs are detached each time,
+and rechecks must preserve the admitted principal.
+
+Admission runs before dispatch, again immediately before a mutation handler
+inside the writer transaction after lock/snapshot waits, and before disclosing
+results or domain errors after reads/writes. **A write can already be committed
+when that final check refuses and returns 503.** The refusal withholds content;
+it does not promise rollback. Retrying that outcome can duplicate a comment or
+other effect: no safe automatic retry or idempotency contract is supplied.
+Atomic commit-time authority requires a coupled host/transaction contract that
+is unavailable here. Synthetic post-commit revocation tests preserve this
+limitation explicitly. No production authenticated writer is claimed.
+
+The native `cmd/tangent-plugin-portfolio` implements SDK protocol 2 and emits
+a manifest-v2 native artifact with `--manifest`. It has no verifier, store,
+upstream client, secrets or callback requests. Init does not open DataDir or
+discover/import a tracker even when a host supplies paths/connection identity.
+Config is refused; no flag, environment variable, label or token enables a
+writer. Every declared route defaults to 503. Positive operation acceptance
+uses only `httpapi.New` with an explicitly injected generated copied shadow
+and fixture verifier, never an installed bundle or live data.
+
+Public contracts are pinned to `libs/plugin-mcp v0.1.1` (tag peeled commit
+`6244e4611fdc594ad7cc883de99d09504a2198a0`) and Tangent
+`v0.19.1-0.20261010073346-380db1fa961c`. At that host source,
+`pkg/plugin/manifest.go` and `internal/pluginhost/http.go` allow literal GET/POST
+owner paths and participant view/draft/resolve/cancel. The dispatcher in
+`internal/server/plugin_routes.go` bounds bodies to 32 KiB, uses the actual
+`hitlSameOrigin`/participant gates, and forwards only
+Content-Type/Accept/Accept-Language. It strips Origin/Host/credentials and omits
+SDK Identity/RawPath/RawQuery/SessionID. A plugin cannot independently validate
+origin from that carrier, and collapsed repeated queries cannot be recovered.
+Origin evidence here is inspection of that immutable host source, not an
+executed host-origin fixture or a duplicated synthetic guard.
+
+Host 0067 supplies a native owner-scoped read callback boundary with no approved
+production provider. It is not this request's portfolio caller verifier, does
+not provision Architect/Planner identities, and does not couple write authority
+to SQLite commits. Local participant/caller labels remain unauthenticated for
+portfolio authority. Production carrier integration and caller provisioning
+are dependencies; no host patch, installed/live acceptance, legacy transport
+parity, pagination/scope overhaul, writer cutover or remote writes are included.
+
+Existing typed `torque_tasks` paging and bounded `torque_titles` batch inputs
+pass through the registry to an injected upstream unchanged, preserving
+has_more/next_cursor/estimated-total or missing-ID evidence. This adapter does
+not fetch another page, claim complete upstream totals, add local pagination,
+or compose a batch of mutations. Real Torque networking/board integration
+remains 0102; Node stays the authoritative writer.
+
+Fixtures exercise each operation route, schema/root and method errors, grants
+and spoofing, stale/revoked requests, post-wait denial, withheld read/CAS data,
+post-commit refusal, concurrent distinct authors, complete CAS conflicts,
+no-op receipts, unknown fields/numbers/nulls, promotion/projection preservation,
+typed paging/batch and sanitized upstream errors. The native manifest fixture
+uses the actual public host decoder/artifact verifier; an injected-stream SDK
+JSON-RPC fixture exercises the default-refusing lifecycle. Neither is a deployed
+host/issuer or real origin acceptance run. `make check` runs module lint, race
+tests and no-cgo build, including the existing copied-snapshot checks.
