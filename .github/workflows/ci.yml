@@ -52,3 +52,29 @@ jobs:
       - name: Build installable dist
         working-directory: ${{ matrix.plugin }}
         run: make dist
+
+  portfolio-storage:
+    name: portfolio storage (lint + race + no-cgo build)
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: portfolio/go.mod
+          cache-dependency-path: portfolio/go.sum
+      - name: Format and vet
+        working-directory: portfolio
+        run: test -z "$(gofmt -l .)" && go vet ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.11.4
+          working-directory: portfolio
+          args: --config ../.golangci.yml --timeout=5m ./...
+      - name: Race fixtures
+        working-directory: portfolio
+        run: go test -race ./...
+      - name: No-cgo build
+        working-directory: portfolio
+        run: CGO_ENABLED=0 go build ./...

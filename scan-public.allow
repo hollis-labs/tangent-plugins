@@ -1,0 +1,3 @@
+# Synthetic .test URL intentionally rejected by the messaging configuration fixture.
+# This exception covers this one rule/file, never actual credential assignments.
+credentials-in-url messaging/internal/messaging/config_test.go Intentional user:secret@example.test invalid-input fixture; no operational credentials.
