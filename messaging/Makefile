@@ -28,3 +28,9 @@ dist: build
 	rm -rf "$(DIST)"; \
 	mv "$$stage" "$(DIST)"; \
 	echo "installable plugin at $(DIST)"
+
+# Real compiled consumer and the pinned public Tangent host; only test-owned
+# databases, sockets and synthetic channel/gateway/dispatcher traffic.
+.PHONY: smoke-stage1
+smoke-stage1:
+	go test -race -count=1 -timeout=240s -v ./integration -run '^TestStage1'
