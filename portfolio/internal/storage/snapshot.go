@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/hollis-labs/tangent-plugins/portfolio/internal/textcompat"
 )
 
 var databaseNames = []string{"priorities", "workstreams", "roadmap", "ideas", "decisions", "risks", "inbox"}
@@ -112,10 +114,12 @@ func ParseSnapshot(files map[string][]byte) (*Snapshot, error) {
 				if !ok {
 					return nil, errors.New("rev must be a nonnegative integer")
 				}
-				rev, err = n.Int64()
-				if err != nil || rev < 0 {
-					return nil, errors.New("rev must be a nonnegative integer")
+				var valid bool
+				rev, valid = textcompat.Integer(n)
+				if !valid || rev < 0 {
+					return nil, errors.New("rev must be a nonnegative integer within SQLite range")
 				}
+
 			}
 			var order any
 			if v, exists := item["order"]; exists && v != nil {
@@ -209,17 +213,17 @@ func (s *Snapshot) children(id string, item map[string]any) error {
 			if _, scalar := v.(string); scalar {
 				targets = []any{v}
 			} else {
-				return errors.New("supersedes must be a string")
+				continue
 			}
 		} else if !ok {
-			return fmt.Errorf("%s must be an array", field)
+			continue
 		}
 		seen := map[string]bool{}
 		typ := legacyEdgeType(field)
 		for _, v := range targets {
 			target, ok := v.(string)
 			if !ok || target == "" {
-				return errors.New("edge target must be a nonempty string")
+				continue
 			}
 			if seen[target] {
 				continue
@@ -258,15 +262,15 @@ func searchText(item map[string]any) string {
 					parts = append(parts, x)
 				case map[string]any:
 					for _, k := range []string{"text", "label"} {
-						if str, ok := x[k].(string); ok {
-							parts = append(parts, str)
+						if textcompat.Truthy(x[k]) {
+							parts = append(parts, textcompat.String(x[k]))
 						}
 					}
 				}
 			}
 		}
 	}
-	return strings.ToLower(strings.Join(parts, " "))
+	return textcompat.Lower(strings.Join(parts, "\n"))
 }
 
 // Decode with number preservation and duplicate-key rejection instead of

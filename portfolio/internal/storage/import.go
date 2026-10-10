@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/hollis-labs/tangent-plugins/portfolio/internal/textcompat"
 )
 
 var projectionTables = []string{"envelopes", "id_reservations", "items", "comments", "links", "edges", "items_fts"}
@@ -204,7 +206,7 @@ func exportTx(ctx context.Context, tx *sql.Tx) (map[string][]byte, error) {
 // Search retains AND-of-substrings behavior, including short terms. Word MATCH
 // cannot substitute for these legacy semantics; FTS5 stores the indexed text.
 func (s *Store) Search(ctx context.Context, q string) ([]string, error) {
-	terms := strings.Fields(strings.ToLower(q))
+	terms := textcompat.Terms(q)
 	if len(terms) == 0 {
 		return nil, errors.New("search query is empty")
 	}
