@@ -1,4 +1,4 @@
-// Package tangentsink prepares immutable public Tangent 1.1 requests and
+// Package tangentsink prepares immutable public Tangent requests and
 // validates earned receipts. It has no reply, acknowledgement or source API.
 package tangentsink
 
@@ -81,7 +81,7 @@ func validate(raw []byte) (plugin.AgentTurnRequest, error) {
 	if err := decoder.Decode(&value); err != nil || schemaErr != nil || schema.Validate(value) != nil {
 		return request, ErrContract
 	}
-	if request.ContractVersion != "1.1" || request.SourceMessage == nil {
+	if (request.ContractVersion != "1.1" && request.ContractVersion != "1.2") || request.SourceMessage == nil {
 		return request, ErrContract
 	}
 	metadata := map[string]any{}

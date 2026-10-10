@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	"github.com/hollis-labs/tangent-plugins/messaging/internal/replyprojection"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 func executableArtifact(entry string) (sdkmanifest.Artifact, error) {
@@ -41,13 +44,20 @@ func emitManifest(out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	extension, err := json.Marshal(plugin.TangentExtension{SchemaVersion: plugin.TangentSchemaVersion, Routes: []plugin.RouteDecl{
+		{Method: http.MethodGet, Path: replyprojection.DeliveryPath, Capability: string(plugin.CapabilityView)},
+		{Method: http.MethodPost, Path: replyprojection.RetryPath, Capability: string(plugin.CapabilityDraft)},
+	}})
+	if err != nil {
+		return err
+	}
 	return sdkmanifest.Encode(out, sdkmanifest.Manifest{
 		SchemaVersion: sdkmanifest.SchemaVersion, ID: pluginID, Name: "Messaging Consumer", Version: pluginVersion, Description: "Durable publication intake with bounded stateless stage processing",
 		Runtime: sdkmanifest.Runtime, Protocol: subprocess.ProtocolVersion,
 		Hosts:  map[string]sdkmanifest.HostRange{"tangent": {Min: "1.0.0", Max: "1.99.99"}},
 		Server: sdkmanifest.Server{Runtime: "binary", Entry: entry, Engines: map[string]sdkmanifest.HostRange{"binary": {Min: "1.0.0", Max: "1.99.99"}}}, Artifact: artifact,
-		Capabilities: []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Enqueue immutable prepared publications through the public Tangent tool", Metadata: json.RawMessage(`{"tools":["tangent.turns_enqueue"]}`)}},
+		Capabilities: []subprocess.CapabilityRequest{{Name: capability.MCPReach, Reason: "Enqueue publications and await/acknowledge actual resolved replies through public Tangent tools", Metadata: json.RawMessage(`{"tools":["tangent.turns_enqueue","tangent.turn_await","tangent.turn_ack"]}`)}},
 		Config:       sdkmanifest.Config{Fields: map[string]sdkmanifest.Field{"configuration_path": {Type: "string", Label: "Explicit non-secret messaging JSON configuration", Required: true, Env: configEnv}}, Secrets: map[string]sdkmanifest.Secret{"tether_token": {Label: "Explicit Tether token if required by the configured endpoints", Env: "TETHER_TOKEN"}}},
-		Tangent:      json.RawMessage(`{"schema_version":1}`),
+		Tangent:      extension,
 	})
 }

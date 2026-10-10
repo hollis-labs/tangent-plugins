@@ -15,6 +15,8 @@ import (
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/messaging"
+	"github.com/hollis-labs/tangent-plugins/messaging/internal/reply"
+	"github.com/hollis-labs/tangent-plugins/messaging/internal/replyprojection"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/tangentsink"
 	"github.com/hollis-labs/tangent/pkg/plugin/hostclient"
 )
@@ -35,6 +37,10 @@ type served struct {
 	closeSource func()
 	closeStages func()
 	consumer    *messaging.Consumer
+	replies     *messaging.ReplyStore
+	dispatcher  reply.Dispatcher
+	replyWorker *messaging.ReplyWorker
+	replyHTTP   *replyprojection.Handler
 }
 
 func readConfiguration(path string) (messaging.Config, error) {
@@ -86,7 +92,18 @@ func (s *served) Init(ctx context.Context, params subprocess.InitParams) (subpro
 		closeStages()
 		return subprocess.InitResult{}, errors.Join(errors.New("messaging: host_endpoint_required"), ledger.Close())
 	}
+	sources := make([]messaging.Source, 0, len(config.Channels))
+	for _, channel := range config.Channels {
+		sources = append(sources, messaging.Source{EndpointRef: config.EndpointRef, Channel: channel})
+	}
+	replies, err := messaging.NewReplyStore(ctx, ledger, sources...)
+	if err != nil {
+		closeSource()
+		closeStages()
+		return subprocess.InitResult{}, errors.Join(err, client.Close(), ledger.Close())
+	}
 	s.config, s.ledger, s.source, s.specs = config, ledger, source, specs
+	s.replies, s.dispatcher = replies, source
 	s.client, s.closeSource, s.closeStages = client, closeSource, closeStages
 	return subprocess.InitResult{ID: pluginID, Name: "Messaging Consumer", Version: pluginVersion, Description: "Durable publication intake with bounded stateless stage processing", Protocol: subprocess.ProtocolVersion, CapabilityContract: capability.ContractVersion}, nil
 }
@@ -105,16 +122,37 @@ func (s *served) Load(ctx context.Context) (subprocess.LoadResult, error) {
 	if err != nil {
 		return subprocess.LoadResult{}, err
 	}
+	host := reply.ToolHost{Caller: s.client}
+	controller, err := reply.New(s.replies, s.dispatcher, host, s.config.CallerURN, s.config.RequestTimeout())
+	if err != nil {
+		return subprocess.LoadResult{}, err
+	}
+	worker, err := messaging.NewReplyWorker(s.config, s.replies, host, controller)
+	if err != nil {
+		return subprocess.LoadResult{}, err
+	}
 	if err = consumer.Load(ctx); err != nil {
 		return subprocess.LoadResult{}, err
 	}
 	s.consumer = consumer
+	if err = worker.Load(ctx); err != nil {
+		// Consumer ownership is retained for the host's eventual Unload.
+		return subprocess.LoadResult{}, err
+	}
+	s.replyWorker = worker
+	s.replyHTTP = &replyprojection.Handler{Reader: replyprojection.Reader{Mappings: s.replies, Store: s.replies,
+		Dispatcher: s.dispatcher, Timeout: s.config.RequestTimeout()}, Controller: controller}
 	return subprocess.LoadResult{}, nil
 }
 
 func (s *served) Unload(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.replyWorker != nil {
+		if err := s.replyWorker.Unload(ctx); err != nil {
+			return err
+		}
+	}
 	if s.consumer != nil {
 		if err := s.consumer.Unload(ctx); err != nil {
 			return err
@@ -140,6 +178,7 @@ func (s *served) Unload(ctx context.Context) error {
 		s.ledger = nil
 	}
 	s.consumer = nil
+	s.replyWorker, s.replyHTTP, s.replies, s.dispatcher = nil, nil, nil, nil
 	return errors.Join(failures...)
 }
 
@@ -153,12 +192,32 @@ func (s *served) Health(ctx context.Context) (subprocess.HealthStatus, error) {
 		return subprocess.HealthStatus{OK: false, Message: "not_loaded"}, nil
 	}
 	ok, code := s.consumer.Health()
+	if ok && s.replyWorker != nil {
+		ok, code = s.replyWorker.Health()
+	}
 	return subprocess.HealthStatus{OK: ok, Message: code}, nil
+}
+
+func (s *served) HTTPHandle(ctx context.Context, request subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+	s.mu.Lock()
+	worker, handler := s.replyWorker, s.replyHTTP
+	s.mu.Unlock()
+	if worker == nil || handler == nil {
+		return subprocess.HTTPResponse{Status: 503, Body: []byte(`{"code":"not_loaded"}`)}, nil
+	}
+	var response subprocess.HTTPResponse
+	err := worker.Do(ctx, func(owned context.Context) error {
+		var callErr error
+		response, callErr = handler.HTTPHandle(owned, request)
+		return callErr
+	})
+	return response, err
 }
 
 var (
 	_ subprocess.Plugin        = (*served)(nil)
 	_ subprocess.HealthChecker = (*served)(nil)
+	_ subprocess.HTTPHandler   = (*served)(nil)
 )
 
 func run(args []string, out io.Writer) error {
