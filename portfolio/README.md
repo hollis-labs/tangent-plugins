@@ -1,6 +1,6 @@
 # Portfolio shadow storage, relationships and Projects
 
-This module implements CW-20261009-0096, CW-20261009-0100 and CW-20261009-0101 / accepted ADR0015 (DEC067). It is a
+This module implements CW-20261009-0096, CW-20261009-0099, CW-20261009-0100 and CW-20261009-0101 / accepted ADR0015 (DEC067). It is a
 shadow storage and copied-snapshot evaluation tool. Node ptrack remains the
 single authoritative writer. There is no installed plugin, MCP/HTTP write
 surface, live synchronization, UI or writer switch here. Read-only Projects clients and
@@ -117,10 +117,9 @@ DataDir lifecycle remain obligations before installed writer adoption.
 
 `make check` runs lint, race fixtures and no-cgo build. Tests use synthetic
 private roots; explicit copied-data parity runs are acceptance artifacts rather
-than tests against a mutable operator dataset. Authenticated operation registry,
-verified caller handoff0067, board/integration ports, host UI0064, CLI migration
+than tests against a mutable operator dataset. Production caller handoff0067, real upstream integrations, host UI0064, CLI migration
 and owner-approved cutover remain later slices. The source registry has29
-operations; this module does not expose that registry yet.
+operations; its internal shadow registry is described below.
 
 ## Read-only Projects (0101)
 
@@ -225,3 +224,108 @@ encoded URNs, safe redaction/errors, limits/redirects/deadlines, upstream task s
 and paging, many-to-one/ambiguous/unresolved membership, external project links,
 and copied-item import/export/verifier/replay regression. There is no live
 integration, credential, grant, host, installed caller or deployment acceptance.
+
+## Internal operation registry (0099)
+
+`internal/operations` now owns the pinned tracker `5ff4d2ee3b533359052c1cb09037191667ef3040`
+operation declarations: names, descriptions, input schemas, write metadata and
+one domain dispatcher. `Registry` returns detached metadata and `Service.Call`
+uses those same declarations for input validation. This package is internal;
+no CLI, MCP, HTTP, installed plugin, live client or authoritative writer exposes
+it. The existing storage CLI retains its copied-snapshot commands.
+
+Local behavior covers discovery/schema/contract, ordered/filterable lists,
+get/create/update, comments, item links, external pointers, reorder, decision
+lifecycle, inbox and compatibility migrate. Optional update rev checks return a
+`conflict` with the complete current item. Missing rev is zero. Empty update
+patches bump rev; repeated link/unlink calls preserve rev and timestamps;
+reorder bumps only items whose order changes, while saving the envelope date.
+Comments allocate `c-N` independently for each item. Sequential IDs retain the
+maximum existing width; slug IDs use the source's ASCII slug and collision
+suffix rules. Global reservations and dropped items survive permanently.
+
+Each mutation verifies the current lossless snapshot under an immediate SQLite
+transaction, applies domain changes, then reuses the importer projection builder.
+Item JSON, core columns, comments, links, typed edges, FTS, envelope dates, ID
+reservations and the receipt commit together. Inbox promotion creates the target
+and marks the source in that same transaction. Callback, child-projection or
+receipt faults roll back both items and the allocator. Existing identities and
+file ordinals cannot move or disappear. Projects metadata and overlays remain
+independent, and the 0100 relationship extension survives legacy operations.
+Exact replay into a mutated shadow still refuses. This verified whole-snapshot
+facade prioritizes correctness; it makes no large-dataset throughput claim.
+
+Unknown fields and their JSON numbers, arrays and explicit nulls survive.
+Null patches delete a field and arrays replace it. Opaque pointer-like fields
+remain JSON even when they cannot form edges; only nonempty string references
+project. For example, `depends_on: 42` is opaque on an idea but fails the declared
+roadmap item schema on create/update. Empty strings in a declared string array
+are source-valid and remain JSON without invented edge targets. Import retains
+historical provenance rather than applying every new-write domain constraint.
+Malformed reserved `_portfolio_relationships` metadata still refuses under the
+existing shadow extension contract. Format annotations remain descriptive, as
+in the Node subset validator.
+
+`Caller.Binding` is an opaque request-local courier. An explicitly injected
+`VerifyCaller` must resolve a currently verified principal and permission for
+the exact operation. A missing verifier, empty/unverified principal, stale or
+refused binding denies mutations with `unavailable`; no body label, role or
+plugin incarnation creates authority. Newly assigned `author`, `added_by` and
+`decided_by` values come from that principal, including create/update/promote,
+comments and decisions. Imported authors stay historical. Clearing a decision
+on reopen retains the source's empty `decided_by` marker. This intentionally
+differs from Node's self-declared authors. `migrate` needs its own explicit
+operation grant and never runs at startup. The verifier is a test-owned seam;
+production host0067 handoff/admission remains unimplemented. Unverified reads
+are allowed only by this internal shadow evaluation policy.
+
+Errors retain the source domain codes `not_found`, `invalid`, `conflict`,
+`locked`, `bad_request` and `unavailable`; SQLite writer contention maps to
+`locked`. Revision projection parses decimal/exponent notation exactly, retaining
+its original JSON number. Fractional or out-of-int64-range revisions refuse
+rather than round. Mutation counters and numeric ID/comment allocation refuse
+exhaustion at JavaScript's safe integer boundary. These are bounded storage
+safeguards, not a promise to reproduce JavaScript precision loss.
+
+Search evaluates the verified FTS5 text projection from the same read snapshot,
+with AND-of-case-insensitive-substrings, short terms, punctuation and comments.
+Array-object text/label values use the source's JSON-value string conversion.
+Full language-neutral Unicode lowercasing preserves dotted-I expansion and
+contextual final sigma; ECMAScript whitespace and UTF-16 relational string
+ordering preserve tested search/filter/list behavior. Migration004 rebuilds only
+the derived FTS projection; fixtures verify unchanged JSON, revisions, receipts,
+Projects, relationships and reservations, corrected search after reopen, and
+atomic migration failure/retry. Board ID ties use English collation from pinned
+`golang.org/x/text v0.40.0`. Evidence is bounded to pinned Node22.12.0 and the
+synthetic Unicode/English ordering cases; arbitrary locales, ICU versions and
+new Unicode-version differences are not claimed equivalent.
+
+Board preserves active_hours2, recent_hours72, limit30, source group ordering,
+comment activity fallback, plain-day inclusion at end-of-day, displayed age at
+start-of-day, future-date clamping, fixed seven-day roadmap landings, partial
+outages and capped counts versus estimated totals. The verified ISO/plain-day
+fixtures do not assert all permissive JavaScript `Date.parse` grammars. Board
+and `torque_*` reads use only an injected domain `Upstream`, with source filter/ID
+validation and safe typed failures. There is no configured/default endpoint,
+credential discovery or network implementation here; real integrations remain
+0102. Source outage messages from safe typed failures are retained; untyped
+adapter errors are replaced by a generic notice.
+
+Compatibility `migrate` repairs missing rev and legacy active decisions, applies
+historical decision seeds and the source idea pointer repair explicitly. A
+complete copied snapshot always has an inbox envelope, so an empty inbox is
+existing and receives no missing-file inbox seeds. Historical missing-file
+bootstrap is not represented by the storage foundation. No automatic seed,
+refresh, synchronization, write-through, cutover, host authority, transport or UI
+adoption is included.
+
+Synthetic fixtures exercise each behavior independently, actual promotion faults
+after target/source work, two-handle CAS/reservation/comment/promotion conflicts,
+disjoint updates, projection/replay preservation and pre-v4 upgrade rollback.
+Private pinned-Node service/reference checks independently verified those shared
+behavior expectations on generated seven-envelope fixtures with an explicit
+private data root, isolated HOME and only a test-owned ephemeral Torque fake.
+Neither the private source nor operator data is bundled, and tests assert no
+registry count or mutable cross-source agreement. `make check` covers the entire
+portfolio module (lint, race and no-cgo build); concurrency stress is limited to
+changed transaction/registry concurrency fixtures.

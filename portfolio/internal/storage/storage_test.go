@@ -236,7 +236,7 @@ func TestRejectsAmbiguousSource(t *testing.T) {
 	for name, env := range s.envelopes {
 		files[name] = []byte(encode(env))
 	}
-	cases := []string{`{"schema":"portfolio/ideas@1","items":[],"items":[]}`, `{"schema":"portfolio/ideas@1","items":[{"id":"DEC-example","title":"duplicate"}]}`, `{"schema":"portfolio/ideas@1","items":[{"id":"bad","title":"Bad","rev":-1}]}`, `{"schema":"portfolio/ideas@1","items":[{"id":"bad","title":"Bad","depends_on":42}]}`}
+	cases := []string{`{"schema":"portfolio/ideas@1","items":[],"items":[]}`, `{"schema":"portfolio/ideas@1","items":[{"id":"DEC-example","title":"duplicate"}]}`, `{"schema":"portfolio/ideas@1","items":[{"id":"bad","title":"Bad","rev":-1}]}`, `{"schema":"portfolio/ideas@1","items":[{"id":"bad","title":"Bad","comments":42}]}`}
 	for _, input := range cases {
 		files["ideas"] = []byte(input)
 		if _, err := ParseSnapshot(files); err == nil {
@@ -279,5 +279,45 @@ func TestNumberAndMissingFieldsPreserved(t *testing.T) {
 	item := snap.envelopes["ideas"]["items"].([]any)[0].(map[string]any)
 	if _, ok := item["rev"]; ok {
 		t.Fatal("default rev added")
+	}
+}
+
+func TestExactRevisionNumbersPreserveJSONAndRefuseRounding(t *testing.T) {
+	for _, rev := range []string{"1.0", "1e0", "10e-1", "0.000", "9223372036854775807"} {
+		files := map[string][]byte{}
+		for _, db := range databaseNames {
+			files[db] = []byte(`{"schema":"portfolio/` + db + `@1","items":[]}`)
+		}
+		files["ideas"] = []byte(`{"schema":"portfolio/ideas@1","items":[{"id":"ID-number","title":"Exact","rev":` + rev + `,"unknown":9007199254740993}]}`)
+		snap, err := ParseSnapshot(files)
+		if err != nil {
+			t.Fatalf("%s: %v", rev, err)
+		}
+		s := openTest(t)
+		if _, err = s.Import(t.Context(), snap); err != nil {
+			t.Fatal(err)
+		}
+		exported, err := s.Export(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		env, err := decodeObject(exported["ideas"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		item := env["items"].([]any)[0].(map[string]any)
+		if item["rev"] != json.Number(rev) || item["unknown"] != json.Number("9007199254740993") {
+			t.Fatalf("JSON numbers changed: %v", item)
+		}
+	}
+	for _, rev := range []string{"1.00000000000000000001", "9007199254740992.1", "1e-999", "9223372036854775808", "9.2233720368547758071e18", "-1"} {
+		files := map[string][]byte{}
+		for _, db := range databaseNames {
+			files[db] = []byte(`{"schema":"portfolio/` + db + `@1","items":[]}`)
+		}
+		files["ideas"] = []byte(`{"schema":"portfolio/ideas@1","items":[{"id":"ID-number","title":"Refuse","rev":` + rev + `}]}`)
+		if _, err := ParseSnapshot(files); err == nil {
+			t.Fatalf("silently rounded/refused range %s", rev)
+		}
 	}
 }
