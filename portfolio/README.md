@@ -1,7 +1,7 @@
 # Portfolio shadow storage, relationships and Projects
 
 This module implements CW-20261009-0096, CW-20261009-0099, CW-20261009-0100,
-CW-20261009-0101 and the bounded source adapters in CW-20261009-0103/0104 /
+CW-20261009-0101/0102 and the bounded source adapters in CW-20261009-0103/0104 /
 accepted ADR0015 (DEC067). It is a
 shadow storage and copied-snapshot evaluation tool. Node ptrack remains the
 single authoritative writer. The default-refusing HTTP/MCP executable described
@@ -314,9 +314,10 @@ start-of-day, future-date clamping, fixed seven-day roadmap landings, partial
 outages and capped counts versus estimated totals. The verified ISO/plain-day
 fixtures do not assert all permissive JavaScript `Date.parse` grammars. Board
 and `torque_*` reads use only an injected domain `Upstream`, with source filter/ID
-validation and safe typed failures. There is no configured/default endpoint,
-credential discovery or network implementation here; real integrations remain
-0102. Source outage messages from safe typed failures are retained; untyped
+validation and safe typed failures. The optional bounded public Torque client
+and request-local Service bridge are documented in
+[torque-client.md](docs/torque-client.md). They have no default endpoint,
+credential discovery or production binding. Source outage messages from safe typed failures are retained; untyped
 adapter errors are replaced by a generic notice.
 
 Compatibility `migrate` repairs missing rev and legacy active decisions, applies
@@ -440,8 +441,9 @@ pass through the registry to an injected upstream unchanged, preserving
 has_more/next_cursor/estimated-total or missing-ID evidence. This adapter does
 not fetch another upstream page or claim complete upstream totals. The shared
 0104 service adds optional bounded local pagination and atomic internal batches.
-Real Torque networking/board integration
-remains 0102; Node stays the authoritative writer.
+The optional source Torque client/board bridge is documented in
+[torque-client.md](docs/torque-client.md); the constructors clear inherited
+network factories. Node stays the authoritative writer.
 
 Fixtures exercise each operation route, schema/root and method errors, grants
 and spoofing, stale/revoked requests, post-wait denial, withheld read/CAS data,
