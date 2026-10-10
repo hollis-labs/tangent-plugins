@@ -24,21 +24,32 @@ const MaxBodyBytes = 32 * 1024
 // requires a later coupled host/transaction contract and is unavailable here.
 type VerifyRequest func(context.Context, json.RawMessage, string, map[string]any) (operations.Authority, error)
 
+// VerifyEdges checks the actual detached State cohort for the copied courier.
+// It is optional source-test injection; nil refuses all edge operations.
+type VerifyEdges func(context.Context, json.RawMessage, string, map[string]any, operations.EdgeCohort) (operations.Authority, error)
+
 // Adapter contains an immutable service configuration for an explicitly injected
 // copied shadow. It retains no caller state between requests.
 type Adapter struct {
-	service operations.Service
-	verify  VerifyRequest
-	routes  map[string]Route
+	service     operations.Service
+	verify      VerifyRequest
+	verifyEdges VerifyEdges
+	routes      map[string]Route
 }
 
 // New snapshots configuration. It never discovers, imports or opens a store.
 // Missing verification refuses reads as well as writes, regardless of any
 // verifier previously configured on the internal shadow service.
 func New(service operations.Service, verify VerifyRequest) *Adapter {
+	return NewWithEdges(service, verify, nil)
+}
+
+// NewWithEdges adopts only explicit adapter verifiers, never Service authority.
+func NewWithEdges(service operations.Service, verify VerifyRequest, edges VerifyEdges) *Adapter {
 	service.Verify = nil
 	service.Admit = nil
-	a := &Adapter{service: service, verify: verify, routes: map[string]Route{}}
+	service.AdmitEdges = nil
+	a := &Adapter{service: service, verify: verify, verifyEdges: edges, routes: map[string]Route{}}
 	for _, route := range Routes() {
 		a.routes[route.Declaration.Path] = route
 	}
@@ -114,6 +125,19 @@ func (a *Adapter) handle(ctx context.Context, request subprocess.HTTPRequest) su
 			return operations.Authority{}, errors.New("request authority refused")
 		}
 		return current, checkErr
+	}
+	if a.verifyEdges != nil {
+		service.AdmitEdges = func(edgeCtx context.Context, _ operations.Caller, operation string, edgeInput map[string]any, cohort operations.EdgeCohort) (operations.Authority, error) {
+			current, checkErr := check()
+			if checkErr != nil || operation != route.Operation.Name || !admitted(current) || current.Principal != authority.Principal {
+				return operations.Authority{}, errors.New("request authority refused")
+			}
+			current, checkErr = a.verifyEdges(edgeCtx, bytes.Clone(identity), operation, edgeInput, cohort)
+			if checkErr != nil || !admitted(current) || current.Principal != authority.Principal {
+				return operations.Authority{}, errors.New("edge authority refused")
+			}
+			return current, nil
+		}
 	}
 	result, callErr := service.Call(ctx, operations.Caller{Binding: identity}, route.Operation.Name, input)
 	// Recheck after the service's snapshot/lock/upstream waits, before disclosure
