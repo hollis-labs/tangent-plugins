@@ -24,7 +24,7 @@ type Route struct {
 func Routes() []Route {
 	var routes []Route
 	for _, op := range operations.Registry() {
-		if op.Name == "migrate" {
+		if op.Name == "migrate" || op.Name == "batch" {
 			continue
 		}
 		capability := "view"

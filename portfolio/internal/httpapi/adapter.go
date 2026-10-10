@@ -37,6 +37,7 @@ type Adapter struct {
 // verifier previously configured on the internal shadow service.
 func New(service operations.Service, verify VerifyRequest) *Adapter {
 	service.Verify = nil
+	service.Admit = nil
 	a := &Adapter{service: service, verify: verify, routes: map[string]Route{}}
 	for _, route := range Routes() {
 		a.routes[route.Declaration.Path] = route

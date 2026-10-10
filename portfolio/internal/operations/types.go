@@ -56,6 +56,7 @@ type Upstream interface {
 type Service struct {
 	Store  *storage.Store
 	Verify VerifyCaller
+	Admit  AdmitRequest
 	Torque Upstream
 	Now    func() time.Time
 }
@@ -67,6 +68,7 @@ type Operation struct {
 	Input       object `json:"input"`
 	Write       bool   `json:"write"`
 	handler     func(*execution, object) (any, error)
+	baseInput   object
 }
 type execution struct {
 	service *Service
@@ -95,10 +97,11 @@ func normalize(v any) (any, error) {
 }
 func clone(v any) any { out, _ := normalize(v); return out }
 
-// Call validates the operation input, verifies mutations independently of body
-// author fields, then dispatches once. Reads are explicitly allowed without a
-// caller for shadow evaluation; this is not a production read policy.
-func (s *Service) Call(ctx context.Context, caller Caller, name string, input any) (any, error) {
+// Call validates shared schemas and dispatches once. When Admit is configured,
+// it checks current request/resource authority before access, after writer waits
+// and before result/error disclosure. Internal shadow reads without Admit remain
+// unauthenticated evaluation only; both transport adapters require verification.
+func (s *Service) Call(ctx context.Context, caller Caller, name string, input any) (out any, callErr error) {
 	op, exists := registry[name]
 	if !exists {
 		return nil, failure("bad_request", "unknown operation: "+name, object{"operations": operationNames()})
@@ -111,11 +114,43 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 	if !ok {
 		return nil, failure("bad_request", "input must be an object", nil)
 	}
-	if problems := validate(op.Input, in, op.Input, ""); len(problems) > 0 {
-		return nil, failure("bad_request", "bad input for "+name, object{"errors": problems})
+	if raw, marshalErr := json.Marshal(in); marshalErr != nil || len(raw) > MaxInputBytes {
+		return nil, failure("bad_request", "input exceeds 32 KiB", nil)
+	}
+	principal := ""
+	if s.Admit != nil && name != "batch" {
+		a, admissionErr := s.admission(ctx, caller, name, in)
+		if admissionErr != nil || !allowed(a) {
+			return nil, failure("unavailable", "verified caller authority unavailable", nil)
+		}
+		principal = a.Principal
+		defer func() {
+			current, disclosureErr := s.admission(ctx, caller, name, in)
+			if disclosureErr != nil || !allowed(current) || current.Principal != principal {
+				out, callErr = nil, failure("unavailable", "verified caller authority unavailable", nil)
+			}
+		}()
+	}
+	for _, key := range []string{"scope", "project_scope", "workstream_scope"} {
+		if _, requested := in[key]; requested {
+			return nil, failure("unsupported", "query scope unavailable", nil)
+		}
+	}
+	if name == "list" || name == "search" || name == "board" {
+		for _, key := range []string{"project", "project_id", "workstream", "workstream_id"} {
+			if _, requested := in[key]; requested {
+				return nil, failure("unsupported", "query scope unavailable", nil)
+			}
+		}
+	}
+	if validationErr := validateInput(op, in); validationErr != nil {
+		return nil, validationErr
+	}
+	if name == "batch" {
+		return s.callBatch(ctx, caller, in)
 	}
 	x := &execution{service: s, ctx: ctx, now: s.clock().Truncate(time.Millisecond)}
-	if op.Write && s.Verify == nil {
+	if op.Write && s.Verify == nil && s.Admit == nil {
 		return nil, failure("unavailable", "verified caller authority unavailable", nil)
 	}
 	var result any
@@ -125,14 +160,29 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 		// verifying its snapshot, immediately before mutation dispatch. This is
 		// not atomic commit-time authority or a production host verifier.
 		if op.Write {
-			a, verifyErr := s.Verify(ctx, caller, name)
+			var a Authority
+			var verifyErr error
+			if s.Admit != nil {
+				a, verifyErr = s.admission(ctx, caller, name, in)
+			} else {
+				a, verifyErr = s.Verify(ctx, caller, name)
+			}
 			if verifyErr != nil || !a.Verified || !a.Allowed || a.Principal == "" {
 				return failure("unavailable", "verified caller authority refused", nil)
+			}
+			if principal != "" && a.Principal != principal {
+				return failure("unavailable", "verified caller changed", nil)
 			}
 			x.who = a.Principal
 		}
 		var callErr error
 		result, callErr = op.handler(x, in)
+		if callErr == nil && op.Write {
+			raw, encodeErr := json.Marshal(result)
+			if encodeErr != nil || len(raw) > MaxResultBytes {
+				return failure("unavailable", "result exceeds output bound", nil)
+			}
+		}
 		return callErr
 	}
 	if op.Write {
@@ -152,17 +202,30 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 		result, err = op.handler(x, in)
 	}
 	if err != nil {
-		var typed *Error
-		if errors.As(err, &typed) {
+		return nil, serviceFailure(err)
+	}
+	if name == "list" || name == "search" {
+		result, err = pageResult(name, in, x.state, result)
+		if err != nil {
 			return nil, err
 		}
-		var dbErr *sqlite.Error
-		if errors.As(err, &dbErr) && (dbErr.Code()&255 == 5 || dbErr.Code()&255 == 6) {
-			return nil, failure("locked", "shadow database is locked by another writer", nil)
-		}
-		return nil, failure("unavailable", "shadow operation unavailable", nil)
+	}
+	if raw, encodeErr := json.Marshal(result); encodeErr != nil || len(raw) > MaxResultBytes {
+		return nil, failure("unavailable", "result exceeds output bound", nil)
 	}
 	return clone(result), nil
+}
+
+func serviceFailure(err error) error {
+	var typed *Error
+	if errors.As(err, &typed) {
+		return err
+	}
+	var dbErr *sqlite.Error
+	if errors.As(err, &dbErr) && (dbErr.Code()&255 == 5 || dbErr.Code()&255 == 6) {
+		return failure("locked", "shadow database is locked by another writer", nil)
+	}
+	return failure("unavailable", "shadow operation unavailable", nil)
 }
 func localOperation(name string) bool {
 	return name == "databases" || name == "list" || name == "get" || name == "search" || name == "board"
