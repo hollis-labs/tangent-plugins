@@ -31,7 +31,8 @@ func NewSource(config Config, token string) (*tether.Client, func(), error) {
 			return (&net.Dialer{Timeout: config.RequestTimeout()}).DialContext(ctx, "unix", socket)
 		}
 	}
-	client := &http.Client{Transport: historyTransport{base: transport}, Timeout: config.RequestTimeout(), CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	remote := !strings.HasPrefix(config.TetherAddress, "unix:")
+	client := &http.Client{Transport: historyTransport{base: transport, remote: remote}, Timeout: config.RequestTimeout(), CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	source, err := tether.New(config.TetherAddress, tether.WithSelfURN(config.CallerURN), tether.WithToken(token), tether.WithHTTPClient(client))
 	if err != nil {
 		transport.CloseIdleConnections()
@@ -40,9 +41,24 @@ func NewSource(config Config, token string) (*tether.Client, func(), error) {
 	return source, transport.CloseIdleConnections, nil
 }
 
-type historyTransport struct{ base http.RoundTripper }
+// protocolHeader is the Tether environment protocol a remote listener requires
+// on every request; it answers 409 protocol_mismatch without it. The published
+// client sends none, and a local Unix socket does not ask for it.
+const (
+	protocolHeader = "Tether-Protocol"
+	protocolValue  = "1"
+)
+
+type historyTransport struct {
+	base   http.RoundTripper
+	remote bool
+}
 
 func (t historyTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if t.remote && request.Header.Get(protocolHeader) == "" {
+		request = request.Clone(request.Context())
+		request.Header.Set(protocolHeader, protocolValue)
+	}
 	response, err := t.base.RoundTrip(request)
 	if err != nil {
 		return nil, err
