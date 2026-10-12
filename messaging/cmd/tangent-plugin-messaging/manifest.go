@@ -12,6 +12,7 @@ import (
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	"github.com/hollis-labs/tangent-plugins/messaging/internal/chatbridge"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/replyprojection"
 	"github.com/hollis-labs/tangent/pkg/plugin"
 )
@@ -47,6 +48,8 @@ func emitManifest(out io.Writer) error {
 	extension, err := json.Marshal(plugin.TangentExtension{SchemaVersion: plugin.TangentSchemaVersion, Routes: []plugin.RouteDecl{
 		{Method: http.MethodGet, Path: replyprojection.DeliveryPath, Capability: string(plugin.CapabilityView)},
 		{Method: http.MethodPost, Path: replyprojection.RetryPath, Capability: string(plugin.CapabilityDraft)},
+		{Method: http.MethodGet, Path: chatbridge.AgentsPath, Capability: string(plugin.CapabilityView)},
+		{Method: http.MethodPost, Path: chatbridge.SendPath, Capability: string(plugin.CapabilityDraft)},
 	}})
 	if err != nil {
 		return err

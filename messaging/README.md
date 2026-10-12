@@ -116,6 +116,27 @@ health reports admission refusal, and the cursor remains pending. This is not
 a lossless archive of refused raw payloads. Source replay or a real purge is
 needed to resolve the pending publication.
 
+## Chat roster bridge
+
+Tangent's binary has no Tether client, so the Chat view reaches Tether's chat
+roster through this plugin, using the configured `tether_address` and
+`tether_token` (the token needs `read` for the roster and `operate` to send).
+Two routes, both under the host's participant guard:
+
+- `GET /api/plugins/messaging/chat/agents` (view) always answers 200 with
+  `{available, reason?, agents[]}`. `agents` is Tether's `GET /chat/agents`
+  verbatim. An older Tether (404), a refused token, an unreachable endpoint or
+  an error yields `available: false` with `tether_endpoint_missing`,
+  `tether_forbidden`, `tether_unreachable` or `tether_error`.
+- `POST /api/plugins/messaging/chat/send` (draft, like retry: the host offers
+  no stronger browser capability) takes `{launch_id, text, idempotency_key}` and
+  forwards to `POST /chat/agents/{launch_id}/send`. Answers `{ok, mode,
+  session_id, replayed}`, or `409 agent_working` (mid-turn, send nothing),
+  `409 idempotency_conflict`, `404 chat_unavailable`, `403 tether_forbidden`.
+
+The routes keep no state, need no reply worker, and send `Tether-Protocol` on
+remote addresses. See Tether's `docs/api/README.md#chat-roster`.
+
 ## User-resolved replies
 
 Only settled local publication-to-item mappings can supply a reply target.
