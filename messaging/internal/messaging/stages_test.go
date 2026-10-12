@@ -16,6 +16,10 @@ func TestBuiltinStageWiringUsesBaseEndpointAndExplicitCredentials(t *testing.T) 
 		if r.URL.Path != "/ai/chat" || r.Header.Get("Authorization") != "Bearer synthetic-token" {
 			t.Error("owner endpoint/credential wiring changed")
 		}
+		// A remote Tether listener answers 409 protocol_mismatch without this header.
+		if r.Header.Get("Tether-Protocol") != "1" {
+			t.Errorf("Tether-Protocol = %q, want 1 on a remote stage endpoint", r.Header.Get("Tether-Protocol"))
+		}
 		var input tether.ChatRequest
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			t.Error(err)
