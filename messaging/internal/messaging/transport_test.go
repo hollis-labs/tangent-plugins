@@ -44,3 +44,28 @@ func TestHistoryBodyBoundDoesNotTruncateIntoSuccess(t *testing.T) {
 		t.Fatal("truncated history treated as EOF/success")
 	}
 }
+
+// A remote Tether listener answers 409 protocol_mismatch to any request without
+// the Tether-Protocol header, and the published client sends none.
+func TestRemoteSourceSendsTetherProtocolHeader(t *testing.T) {
+	var got string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Tether-Protocol")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"owner-inbox","address":"msg://service/local/channel/owner-inbox","messages":[]}`)
+	}))
+	defer server.Close()
+	config := testConfig()
+	config.TetherAddress = server.URL
+	client, closeTransport, err := NewSource(config, "synthetic-owned-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTransport()
+	if _, err = client.ChannelMessages(context.Background(), "owner-inbox", tether.ChannelMessagesOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got != "1" {
+		t.Fatalf("Tether-Protocol = %q, want 1", got)
+	}
+}
