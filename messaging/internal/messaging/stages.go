@@ -31,7 +31,7 @@ func BuildStages(config Config, token string) ([]pipeline.StageSpec, func(), err
 			return (&net.Dialer{Timeout: budget}).DialContext(ctx, "unix", socket)
 		}
 	}
-	client := &http.Client{Transport: explicitAuthTransport{base: transport, token: token}, Timeout: budget}
+	client := &http.Client{Transport: explicitAuthTransport{base: transport, token: token, remote: !strings.HasPrefix(configured.EndpointURL, "unix:")}, Timeout: budget}
 	stage, err := summarizer.New(summarizer.Config{EndpointURL: configured.EndpointURL, CallerID: configured.CallerID, ProviderHint: configured.ProviderHint, ModelHint: configured.ModelHint, Timeout: budget, InstructionPath: configured.InstructionPath}, client)
 	if err != nil {
 		transport.CloseIdleConnections()
@@ -45,12 +45,19 @@ func BuildStages(config Config, token string) ([]pipeline.StageSpec, func(), err
 type explicitAuthTransport struct {
 	base  http.RoundTripper
 	token string
+	// remote is true for an http(s) endpoint. A remote Tether listener answers
+	// 409 protocol_mismatch to a request without Tether-Protocol, which the
+	// summarizer reported as stage_error; a local Unix socket does not ask for it.
+	remote bool
 }
 
 func (t explicitAuthTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	owned := request.Clone(request.Context())
 	if t.token != "" {
 		owned.Header.Set("Authorization", "Bearer "+t.token)
+	}
+	if t.remote && owned.Header.Get(protocolHeader) == "" {
+		owned.Header.Set(protocolHeader, protocolValue)
 	}
 	return t.base.RoundTrip(owned)
 }
