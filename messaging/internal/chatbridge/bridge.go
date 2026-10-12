@@ -193,7 +193,7 @@ func (b *Bridge) do(ctx context.Context, method, path string, body []byte) (int,
 	if err != nil {
 		return 0, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 	return resp.StatusCode, data, err
 }
