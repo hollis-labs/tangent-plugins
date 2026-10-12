@@ -12,6 +12,7 @@ import (
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/messaging"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/reply"
+	"github.com/hollis-labs/tangent-plugins/messaging/internal/chatbridge"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/replyprojection"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/tangentsink"
 	"github.com/hollis-labs/tangent/pkg/plugin"
@@ -134,6 +135,8 @@ func TestReplyManifestDeclaresGuardedRoutesAndPublicAwaitAckReach(t *testing.T) 
 	wanted := []plugin.RouteDecl{
 		{Method: http.MethodGet, Path: replyprojection.DeliveryPath, Capability: string(plugin.CapabilityView)},
 		{Method: http.MethodPost, Path: replyprojection.RetryPath, Capability: string(plugin.CapabilityDraft)},
+		{Method: http.MethodGet, Path: chatbridge.AgentsPath, Capability: string(plugin.CapabilityView)},
+		{Method: http.MethodPost, Path: chatbridge.SendPath, Capability: string(plugin.CapabilityDraft)},
 	}
 	for _, want := range wanted {
 		found := false

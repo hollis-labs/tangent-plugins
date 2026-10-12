@@ -14,6 +14,7 @@ import (
 	pipeline "github.com/hollis-labs/libs/message-pipeline"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	"github.com/hollis-labs/tangent-plugins/messaging/internal/chatbridge"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/messaging"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/reply"
 	"github.com/hollis-labs/tangent-plugins/messaging/internal/replyprojection"
@@ -41,6 +42,7 @@ type served struct {
 	dispatcher  reply.Dispatcher
 	replyWorker *messaging.ReplyWorker
 	replyHTTP   *replyprojection.Handler
+	chat        *chatbridge.Bridge
 }
 
 func readConfiguration(path string) (messaging.Config, error) {
@@ -110,6 +112,12 @@ func (s *served) Init(ctx context.Context, params subprocess.InitParams) (subpro
 		closeStages()
 		return subprocess.InitResult{}, errors.Join(errors.New("messaging: host_endpoint_required"), ledger.Close())
 	}
+	chat, err := chatbridge.New(config.TetherAddress, token, config.RequestTimeout())
+	if err != nil {
+		closeSource()
+		closeStages()
+		return subprocess.InitResult{}, errors.Join(err, client.Close(), ledger.Close())
+	}
 	sources := make([]messaging.Source, 0, len(config.Channels))
 	for _, channel := range config.Channels {
 		sources = append(sources, messaging.Source{EndpointRef: config.EndpointRef, Channel: channel})
@@ -118,8 +126,10 @@ func (s *served) Init(ctx context.Context, params subprocess.InitParams) (subpro
 	if err != nil {
 		closeSource()
 		closeStages()
+		chat.Close()
 		return subprocess.InitResult{}, errors.Join(err, client.Close(), ledger.Close())
 	}
+	s.chat = chat
 	s.config, s.ledger, s.source, s.specs = config, ledger, source, specs
 	s.replies, s.dispatcher = replies, source
 	s.client, s.closeSource, s.closeStages = client, closeSource, closeStages
@@ -183,6 +193,10 @@ func (s *served) Unload(ctx context.Context) error {
 		failures = append(failures, s.client.Close())
 		s.client = nil
 	}
+	if s.chat != nil {
+		s.chat.Close()
+		s.chat = nil
+	}
 	if s.closeStages != nil {
 		s.closeStages()
 		s.closeStages = nil
@@ -218,8 +232,15 @@ func (s *served) Health(ctx context.Context) (subprocess.HealthStatus, error) {
 
 func (s *served) HTTPHandle(ctx context.Context, request subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
 	s.mu.Lock()
-	worker, handler := s.replyWorker, s.replyHTTP
+	worker, handler, chat := s.replyWorker, s.replyHTTP, s.chat
 	s.mu.Unlock()
+	// The chat routes need only the Tether endpoint, not the reply worker.
+	if chatbridge.Handles(request.Path) {
+		if chat == nil {
+			return subprocess.HTTPResponse{Status: 503, Body: []byte(`{"code":"not_loaded"}`)}, nil
+		}
+		return chat.HTTPHandle(ctx, request)
+	}
 	if worker == nil || handler == nil {
 		return subprocess.HTTPResponse{Status: 503, Body: []byte(`{"code":"not_loaded"}`)}, nil
 	}
