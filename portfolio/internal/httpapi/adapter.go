@@ -38,6 +38,7 @@ type Adapter struct {
 func New(service operations.Service, verify VerifyRequest) *Adapter {
 	service.Verify = nil
 	service.Admit = nil
+	service.BindTorque = nil
 	a := &Adapter{service: service, verify: verify, routes: map[string]Route{}}
 	for _, route := range Routes() {
 		a.routes[route.Declaration.Path] = route

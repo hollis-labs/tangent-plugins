@@ -173,25 +173,47 @@ func board(x *execution, in object) (any, error) {
 	activity := map[string]time.Time{}
 	activityOK := true
 	if doing, has := tasks["doing"]; has {
-		for _, task := range doing {
-			got, err := x.upstream("torque_task", object{"id": task["id"]})
-			if err != nil {
-				activityOK = false
-				continue
+		if batch, ok := x.torque.(ActivityUpstream); ok {
+			ids := []string{}
+			requested := map[string]bool{}
+			for _, task := range doing {
+				id := str(task["id"])
+				ids = append(ids, id)
+				requested[id] = true
 			}
-			result, ok := got.(object)
-			if !ok {
-				activityOK = false
-				continue
-			}
-			latest := ""
-			for _, c := range objects(result["comments"]) {
-				if s := str(c["created_at"]); s > latest {
-					latest = s
+			if len(ids) > 0 {
+				got, err := batch.LatestCommentActivity(x.ctx, ids)
+				activityOK = err == nil && got.Complete
+				if activityOK {
+					for id, t := range got.LatestByID {
+						if !requested[id] || t.IsZero() {
+							activityOK = false
+							break
+						}
+						activity[id] = t
+					}
 				}
 			}
-			if t, ok := parseDate(latest); ok {
-				activity[str(task["id"])] = t
+		} else {
+			for _, task := range doing {
+				got, err := x.upstream("torque_task", object{"id": task["id"]})
+				if err != nil {
+					activityOK = false
+					continue
+				}
+				result, ok := got.(object)
+				if !ok {
+					activityOK = false
+					continue
+				}
+				t, complete := syntheticActivity(result)
+				if !complete {
+					activityOK = false
+					continue
+				}
+				if !t.IsZero() {
+					activity[str(task["id"])] = t
+				}
 			}
 		}
 		if !activityOK {

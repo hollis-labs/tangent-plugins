@@ -54,11 +54,12 @@ type Upstream interface {
 
 // Service evaluates local domain operations on one explicitly selected shadow.
 type Service struct {
-	Store  *storage.Store
-	Verify VerifyCaller
-	Admit  AdmitRequest
-	Torque Upstream
-	Now    func() time.Time
+	Store      *storage.Store
+	Verify     VerifyCaller
+	Admit      AdmitRequest
+	Torque     Upstream
+	BindTorque BindUpstream
+	Now        func() time.Time
 }
 
 // Operation is the single domain declaration used for validation and dispatch.
@@ -76,6 +77,7 @@ type execution struct {
 	who     string
 	now     time.Time
 	ctx     context.Context
+	torque  Upstream
 }
 
 func (s *Service) clock() time.Time {
@@ -106,6 +108,11 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 	if !exists {
 		return nil, failure("bad_request", "unknown operation: "+name, object{"operations": operationNames()})
 	}
+	if name == "board" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 	v, err := normalize(input)
 	if err != nil {
 		return nil, failure("bad_request", "input must be JSON", nil)
@@ -118,15 +125,17 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 		return nil, failure("bad_request", "input exceeds 32 KiB", nil)
 	}
 	principal := ""
+	var parent Authority
 	if s.Admit != nil && name != "batch" {
 		a, admissionErr := s.admission(ctx, caller, name, in)
-		if admissionErr != nil || !allowed(a) {
+		if admissionErr != nil || ctx.Err() != nil || !allowed(a) {
 			return nil, failure("unavailable", "verified caller authority unavailable", nil)
 		}
 		principal = a.Principal
+		parent = a
 		defer func() {
 			current, disclosureErr := s.admission(ctx, caller, name, in)
-			if disclosureErr != nil || !allowed(current) || current.Principal != principal {
+			if disclosureErr != nil || ctx.Err() != nil || !allowed(current) || current.Principal != principal {
 				out, callErr = nil, failure("unavailable", "verified caller authority unavailable", nil)
 			}
 		}()
@@ -150,6 +159,12 @@ func (s *Service) Call(ctx context.Context, caller Caller, name string, input an
 		return s.callBatch(ctx, caller, in)
 	}
 	x := &execution{service: s, ctx: ctx, now: s.clock().Truncate(time.Millisecond)}
+	if usesTorque(name) {
+		x.torque, err = s.bindTorque(ctx, caller, name, in, parent)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if op.Write && s.Verify == nil && s.Admit == nil {
 		return nil, failure("unavailable", "verified caller authority unavailable", nil)
 	}
@@ -236,10 +251,10 @@ func (x *execution) upstream(name string, input object) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if x.service.Torque == nil {
+	if x.torque == nil {
 		return nil, failure("unavailable", "Torque unavailable", nil)
 	}
-	result, err := x.service.Torque.Read(x.ctx, name, validated)
+	result, err := x.torque.Read(x.ctx, name, validated)
 	if err != nil {
 		var e *Error
 		if errors.As(err, &e) {

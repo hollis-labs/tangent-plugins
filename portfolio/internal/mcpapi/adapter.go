@@ -33,6 +33,7 @@ type Adapter struct {
 // New never opens a store or adopts authority from the supplied service.
 func New(service operations.Service, verify VerifyRequest) *Adapter {
 	service.Verify, service.Admit = nil, nil
+	service.BindTorque = nil
 	a := &Adapter{service: service, verify: verify, tools: map[string]operations.Operation{}}
 	for _, op := range operations.Registry() {
 		if op.Name != "migrate" {
