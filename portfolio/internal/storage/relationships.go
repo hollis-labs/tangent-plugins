@@ -198,18 +198,8 @@ func (s *Store) mutateRelationship(ctx context.Context, fromID, toID, typ string
 	if err != nil {
 		return false, err
 	}
-	if link {
-		metadata, metadataErr := relationshipMetadata(item)
-		if metadataErr != nil {
-			return false, metadataErr
-		}
-		if metadata == nil {
-			metadata = map[string]any{"version": json.Number("1"), "edges": []any{}}
-			item[relationshipField] = metadata
-		}
-		metadata["edges"] = append(metadata["edges"].([]any), map[string]any{"type": typ, "target": toID})
-	} else {
-		removeRelationship(item, toID, typ)
+	if err = changeRelationshipValue(item, toID, typ, link); err != nil {
+		return false, err
 	}
 	if rev == math.MaxInt64 {
 		return false, errors.New("item revision exhausted")

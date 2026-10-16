@@ -87,6 +87,7 @@ func (s *Service) callBatch(ctx context.Context, caller Caller, input object) (a
 		return nil, failure("unavailable", "shadow store unavailable", nil)
 	}
 	var result any
+	edges := &edgeGuard{service: s, caller: caller, principal: principal}
 	err := s.Store.Transact(ctx, func(state *storage.State) error {
 		if err := checkAll(); err != nil {
 			return err
@@ -98,6 +99,16 @@ func (s *Service) callBatch(ctx context.Context, caller Caller, input object) (a
 			name, in := str(entry["operation"]), entry["input"].(object)
 			if err := check(name, in); err != nil {
 				return err
+			}
+			if edgeOperation(name) {
+				if err := validateEdgeIDs(name, in); err != nil {
+					return err
+				}
+				// Resolve each entry against evolving transaction State, not a
+				// second read or the original batch inputs. Retain every cohort.
+				if err := edges.acquire(ctx, state, name, in); err != nil {
+					return err
+				}
 			}
 			out, err := registry[name].handler(x, in)
 			if err != nil {
@@ -113,6 +124,9 @@ func (s *Service) callBatch(ctx context.Context, caller Caller, input object) (a
 		if err := checkAll(); err != nil {
 			return err
 		}
+		if err := edges.checkAll(ctx); err != nil {
+			return err
+		}
 		result = object{"results": results}
 		raw, err := json.Marshal(result)
 		if err != nil || len(raw) > MaxResultBytes {
@@ -124,6 +138,9 @@ func (s *Service) callBatch(ctx context.Context, caller Caller, input object) (a
 	// a retry assurance, and it withholds error details as well as successes.
 	if admissionErr := checkAll(); admissionErr != nil {
 		return nil, admissionErr
+	}
+	if edgeErr := edges.checkAll(ctx); edgeErr != nil {
+		return nil, edgeErr
 	}
 	if err != nil {
 		return nil, serviceFailure(err)

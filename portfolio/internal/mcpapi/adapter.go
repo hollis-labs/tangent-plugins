@@ -24,16 +24,27 @@ const Prefix = "tangent.portfolio_"
 // supply no caller authority. Checks receive detached request-local values.
 type VerifyRequest func(context.Context, json.RawMessage, string, map[string]any) (operations.Authority, error)
 
+// VerifyEdges is optional typed State-cohort verification bound to one courier.
+// Nil refuses all edge reads/writes even when ordinary admission succeeds.
+type VerifyEdges func(context.Context, json.RawMessage, string, map[string]any, operations.EdgeCohort) (operations.Authority, error)
+
 type Adapter struct {
-	service operations.Service
-	verify  VerifyRequest
-	tools   map[string]operations.Operation
+	service     operations.Service
+	verify      VerifyRequest
+	verifyEdges VerifyEdges
+	tools       map[string]operations.Operation
 }
 
 // New never opens a store or adopts authority from the supplied service.
 func New(service operations.Service, verify VerifyRequest) *Adapter {
+	return NewWithEdges(service, verify, nil)
+}
+
+// NewWithEdges clears ambient Service authority and installs explicit verifiers.
+func NewWithEdges(service operations.Service, verify VerifyRequest, edges VerifyEdges) *Adapter {
 	service.Verify, service.Admit = nil, nil
-	a := &Adapter{service: service, verify: verify, tools: map[string]operations.Operation{}}
+	service.AdmitEdges = nil
+	a := &Adapter{service: service, verify: verify, verifyEdges: edges, tools: map[string]operations.Operation{}}
 	for _, op := range operations.Registry() {
 		if op.Name != "migrate" {
 			a.tools[Prefix+op.Name] = op
@@ -141,6 +152,19 @@ func (a *Adapter) handle(ctx context.Context, request subprocess.MCPCallRequest)
 			return operations.Authority{}, errors.New("request authority refused")
 		}
 		return current, checkErr
+	}
+	if a.verifyEdges != nil {
+		service.AdmitEdges = func(edgeCtx context.Context, _ operations.Caller, operation string, edgeInput map[string]any, cohort operations.EdgeCohort) (operations.Authority, error) {
+			current, checkErr := check(operation, edgeInput)
+			if checkErr != nil || name != "batch" && operation != name || !admitted(current) || current.Principal != authority.Principal {
+				return operations.Authority{}, errors.New("request authority refused")
+			}
+			current, checkErr = a.verifyEdges(edgeCtx, bytes.Clone(identity), operation, edgeInput, cohort)
+			if checkErr != nil || !admitted(current) || current.Principal != authority.Principal {
+				return operations.Authority{}, errors.New("edge authority refused")
+			}
+			return current, nil
+		}
 	}
 	result, callErr := service.Call(ctx, operations.Caller{Binding: bytes.Clone(identity)}, name, in)
 	current, err := check(name, in)

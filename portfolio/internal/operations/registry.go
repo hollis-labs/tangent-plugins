@@ -31,6 +31,12 @@ func init() {
 		registry[op.Name] = op
 		declarationOrder = append(declarationOrder, op.Name)
 	}
+	for _, op := range edgeDeclarations() {
+		requiredStrings(op.Input)
+		op.handler = handlerFor(op.Name)
+		registry[op.Name] = op
+		declarationOrder = append(declarationOrder, op.Name)
+	}
 	op := batchDeclaration()
 	requiredStrings(op.Input)
 	registry[op.Name] = op
@@ -89,6 +95,10 @@ func handlerFor(name string) func(*execution, object) (any, error) {
 		return inboxDismiss
 	case "migrate":
 		return migrate
+	case "edge_list", "edge_backlinks", "decision_gates":
+		return func(x *execution, in object) (any, error) { return edgeRead(x, in, name) }
+	case "edge_add", "edge_remove":
+		return func(x *execution, in object) (any, error) { return edgeWrite(x, in, name == "edge_add") }
 	default:
 		return func(x *execution, in object) (any, error) { return x.upstream(name, in) }
 	}
