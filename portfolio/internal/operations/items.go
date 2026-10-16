@@ -26,7 +26,10 @@ func knownDB(db string) error {
 func (x *execution) items(db string) []object {
 	out := []object{}
 	for _, v := range x.state.Envelopes[db]["items"].([]any) {
-		out = append(out, v.(object))
+		item := v.(object)
+		if x.scope == nil || x.scope.matches(x.state.Membership.Resolve(str(item["id"]))) {
+			out = append(out, item)
+		}
 	}
 	return out
 }
@@ -71,10 +74,13 @@ func databases(x *execution, _ object) (any, error) {
 	for _, db := range dbNames {
 		env := x.state.Envelopes[db]
 		r := object{"name": db, "prefix": prefixes[db], "schema": env["schema"], "count": len(x.items(db))}
-		if v, has := env["updated"]; has {
+		if v, has := env["updated"]; has && x.scope == nil {
 			r["updated"] = v
 		}
 		out = append(out, r)
+	}
+	if x.scope != nil {
+		return object{"items": out, "scope": x.scope, "partial": false}, nil
 	}
 	return out, nil
 }

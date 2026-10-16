@@ -62,6 +62,9 @@ func validateInput(op Operation, in object) error {
 func composeInput(op Operation) object {
 	input := clone(op.Input).(object)
 	props := input["properties"].(object)
+	if scopeOperation(op.Name) {
+		props["scope"] = scopeSchema()
+	}
 	if op.Name == "list" || op.Name == "search" {
 		props["page"] = object{"type": "object", "additionalProperties": false, "properties": object{
 			"limit":    object{"type": "integer", "minimum": 1, "maximum": 200},

@@ -11,7 +11,7 @@ import (
 // pageResult pages only a complete local snapshot after domain filtering. The
 // caller verifier must admit the entire requested cohort before any totals.
 // It does not implement project/workstream membership or upstream paging.
-func pageResult(name string, input object, state *storage.State, result any) (any, error) {
+func pageResult(name string, input object, state *storage.State, result any, proof any) (any, error) {
 	page, requested := input["page"].(object)
 	if !requested {
 		return result, nil
@@ -34,7 +34,7 @@ func pageResult(name string, input object, state *storage.State, result any) (an
 			}
 		}
 	}
-	raw, err := json.Marshal(object{"operation": name, "query": query, "cohort": result, "revisions": versions})
+	raw, err := json.Marshal(object{"operation": name, "query": query, "cohort": result, "revisions": versions, "membership_proof": proof})
 	if err != nil {
 		return nil, failure("unavailable", "snapshot unavailable", nil)
 	}

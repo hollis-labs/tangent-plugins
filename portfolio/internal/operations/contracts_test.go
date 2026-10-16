@@ -50,7 +50,7 @@ func TestPageContinuationOnlyObservesSelectedCohort(t *testing.T) {
 	for _, page := range []object{{"limit": 0}, {"limit": 201}, {"offset": -1}, {"offset": 100001}, {"offset": 1}, {"snapshot": "short"}, {"extra": true}} {
 		errorCode(t, s, "list", object{"db": "ideas", "page": page}, "bad_request")
 	}
-	errorCode(t, s, "list", object{"db": "ideas", "scope": "project-x"}, "unsupported")
+	errorCode(t, s, "list", object{"db": "ideas", "scope": "project-x"}, "bad_request")
 	search := itemCall(t, s, "search", object{"q": "idea", "db": "ideas", "page": object{"limit": 1}})
 	searchNext := object{"q": "idea", "db": "ideas", "page": object{"limit": 1, "offset": 1, "snapshot": search["snapshot"]}}
 	itemCall(t, s, "update", object{"db": "risks", "id": "RK-001", "patch": object{"notes": "still unrelated"}})

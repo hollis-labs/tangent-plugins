@@ -12,16 +12,23 @@ import (
 
 // State is a detached lossless view inside a shadow transaction. Callbacks must
 // not retain it, perform I/O, delete/reorder existing items, or change identities.
-// Projects metadata belongs to a separate projection and is never included here.
+// Allowlisted membership facts accompany detached reads from the same database
+// snapshot. Writer callbacks do not mutate Projects metadata or membership.
 type State struct {
-	Envelopes map[string]map[string]any
-	Reserved  map[string]string
-	search    map[string]string
+	Envelopes  map[string]map[string]any
+	Reserved   map[string]string
+	search     map[string]string
+	Membership *MembershipIndex
 }
 
 // ReadState gives the internal service a verified, detached consistent snapshot.
 func (s *Store) ReadState(ctx context.Context) (*State, error) {
-	files, err := s.Export(ctx)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	files, err := exportTx(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +36,16 @@ func (s *Store) ReadState(ctx context.Context) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	return stateOf(snap), nil
+	sources, err := projectSources(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	state := stateOf(snap)
+	state.Membership = membershipIndex(snap, sources)
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return state, nil
 }
 func stateOf(snap *Snapshot) *State {
 	state := &State{Envelopes: snap.envelopes, Reserved: map[string]string{}, search: map[string]string{}}

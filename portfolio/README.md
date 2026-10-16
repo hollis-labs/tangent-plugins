@@ -216,8 +216,9 @@ Local total/truncation and a bounded explicit unscoped/ambiguous bucket are
 separate. TaskTotal counts unique matching fetched tasks, not all upstream tasks;
 TaskTruncated reflects the final view cap. Per-query upstream totals/cursors/
 partial evidence remain separate, because overlapping selectors cannot be summed
-into an exact global total. This project view does not implement0105's global
-scope API,0102's board/full Torque port,0103–0106's operation/admission surfaces,
+into an exact global total. ProjectView and the shared0105 domain scopes now
+reuse one canonical membership resolver; see [query scopes](docs/query-scopes.md).
+The ProjectView composition does not implement0102's full Torque port,
 0108 UI,0109 cutover, Tether workstream remote reads or Tesseract content reads.
 No new workstream route or filter combinations are invented here.
 
@@ -433,12 +434,14 @@ not provision Architect/Planner identities, and does not couple write authority
 to SQLite commits. Local participant/caller labels remain unauthenticated for
 portfolio authority. Production carrier integration and caller provisioning
 are dependencies; no host patch, installed/live acceptance, legacy transport
-parity, query-scope algorithm, writer cutover or remote writes are included.
+parity, production query binding, writer cutover or remote writes are included.
 
 Existing typed `torque_tasks` paging and bounded `torque_titles` batch inputs
-pass through the registry to an injected upstream unchanged, preserving
+without scope pass through the registry to an injected upstream unchanged, preserving
 has_more/next_cursor/estimated-total or missing-ID evidence. This adapter does
-not fetch another upstream page or claim complete upstream totals. The shared
+not fetch another upstream page or claim complete upstream totals in that path.
+The source-only0105 scoped path is documented in [query scopes](docs/query-scopes.md);
+structural list/facet acceptance is pending review. The shared
 0104 service adds optional bounded local pagination and atomic internal batches.
 Real Torque networking/board integration
 remains 0102; Node stays the authoritative writer.
